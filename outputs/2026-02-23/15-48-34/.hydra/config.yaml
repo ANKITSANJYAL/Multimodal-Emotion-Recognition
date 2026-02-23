@@ -1,0 +1,29 @@
+experiment_name: AffectDiff_Baseline_Joint_Training
+seed: 42
+data:
+  data_dir: data
+  cache_dir: data/cache
+  batch_size: 64
+  num_workers: 8
+  seq_len: 50
+model:
+  num_classes: 6
+  text_dim: 300
+  audio_dim: 74
+  video_dim: 35
+  hidden_dim: 512
+  latent_dim: 256
+  beta_kl: 5.0
+  lambda_diff: 1.0
+diffusion:
+  steps: 1000
+  schedule: cosine
+trainer:
+  epochs: 100
+  lr: 0.0001
+  weight_decay: 0.0001
+  devices: 2
+  precision: 16-mixed
+eval:
+  checkpoint_path: checkpoints/best.ckpt
+  dissonance_threshold: 0.4

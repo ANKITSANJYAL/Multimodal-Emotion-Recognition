@@ -1,0 +1,54 @@
+# ==========================================
+# Affect-Diff: CVPR 2026 Configuration
+# ==========================================
+
+# Global Settings
+experiment_name: "AffectDiff_Baseline_Joint_Training"
+seed: 42
+
+# ------------------------------------------
+# Data Configuration
+# ------------------------------------------
+data:
+  data_dir: "data"                     # Raw CMU-MOSEI .csd files location (matches workspace structure)
+  cache_dir: "data/cache"              # Where the pre-aligned PyTorch tensors go
+  batch_size: 64                       # Maximize this based on your GPU VRAM
+  num_workers: 8                       # Keep GPUs fed with data
+  seq_len: 50                          # Standard temporal padding for MOSEI
+
+# ------------------------------------------
+# Model Architecture & Bottleneck
+# ------------------------------------------
+model:
+  num_classes: 6                       # MOSEI emotions (Happy, Sad, Angry, Fear, Disgust, Surprise)
+  text_dim: 300                        # GloVe embeddings (or 768 if you swap to RoBERTa later)
+  audio_dim: 74                        # COVAREP acoustic features
+  video_dim: 42                        # VisualFacet42 facial action units
+  hidden_dim: 512                      # Intermediate TCN projection size
+  latent_dim: 256                      # The size of our Shared Disentangled Affective Space
+  beta_kl: 5.0                         # Pressure on the Total Correlation / Disentanglement
+  lambda_diff: 1.0                     # Weight of the Diffusion Generative Loss vs Classification
+
+# ------------------------------------------
+# Diffusion Generative Prior
+# ------------------------------------------
+diffusion:
+  steps: 1000                          # Standard DDPM forward/reverse steps
+  schedule: "cosine"                   # Preserves continuous affective latents better than linear
+
+# ------------------------------------------
+# Training & Optimization
+# ------------------------------------------
+trainer:
+  epochs: 100
+  lr: 1e-4                             # Base learning rate for AdamW
+  weight_decay: 1e-4                   # L2 regularization
+  devices: 2                           # Use 2 GPUs for DDP
+  precision: "16-mixed"                # Automatic Mixed Precision for faster A100/H100 training
+
+# ------------------------------------------
+# Evaluation & Inference
+# ------------------------------------------
+eval:
+  checkpoint_path: "checkpoints/best.ckpt" # Path used when running eval.py
+  dissonance_threshold: 0.4            # Threshold for flagging "hidden emotions" vs text
