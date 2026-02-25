@@ -112,6 +112,9 @@ class AffectiveDiffusion(nn.Module):
         # Calculate the mean of the posterior
         model_mean = sqrt_recip_alphas_t * (x - betas_t * predicted_noise / sqrt_one_minus_alphas_cumprod_t)
 
+        # DeepMind Stability Fix: Clamp mean to prevent activation drift during long loops
+        model_mean = torch.clamp(model_mean, min=-12.0, max=12.0)
+
         if t_index == 0:
             return model_mean
         else:

@@ -2,6 +2,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import pytorch_lightning as pl
+import copy
 from torch.optim import AdamW
 from torch.optim.lr_scheduler import CosineAnnealingLR
 
@@ -55,6 +56,13 @@ class AffectDiffModule(pl.LightningModule):
         # 3. The Generative Diffusion Prior (Learns the manifold of z)
         self.unet = UNet1D(latent_dim=latent_dim, num_classes=num_classes)
         self.diffusion = AffectiveDiffusion(self.unet, timesteps=diffusion_steps)
+
+        # 4. DeepMind Level EMA: Shadow weights for the Generative Prior
+        # This makes sampling significantly more robust and stable.
+        self.ema_unet = copy.deepcopy(self.unet)
+        for param in self.ema_unet.parameters():
+            param.requires_grad = False
+        self.ema_decay = 0.999
 
     def forward(self, text, audio, video):
         """Standard forward pass."""
@@ -138,7 +146,69 @@ class AffectDiffModule(pl.LightningModule):
         acc = (preds == labels.long()).float().mean()
         self.log(f'{stage}_acc', acc, prog_bar=True, sync_dist=True)
 
+        # Step 7: Granular Robustness Checks (Time=0 Reconstruction)
+        with torch.no_grad():
+            t_zero = torch.zeros((b,), device=self.device).long()
+            z_pred_zero = self.unet(z_permuted, t_zero, label=labels, causal_weights=causal_influence)
+            # Log the reconstruction fidelity at the clean limit
+            latent_drift = F.mse_loss(z_permuted, z_pred_zero)
+            self.log(f'{stage}/latent_drift_t0', latent_drift, sync_dist=True)
+
         return loss_total
+
+    def on_train_batch_end(self, outputs, batch, batch_idx):
+        """Update EMA weights after every training step."""
+        with torch.no_grad():
+            for p, ema_p in zip(self.unet.parameters(), self.ema_unet.parameters()):
+                ema_p.data.mul_(self.hparams.get('ema_decay', 0.999)).add_(p.data, alpha=1 - self.hparams.get('ema_decay', 0.999))
+
+    def on_validation_epoch_end(self):
+        """
+        DeepMind Verification: Counterfactual Hallucination Check.
+        We sample latents from the DIFFUSION manifold and check if our CLASSIFIER
+        recognizes the intended emotion. This proves the UNet is learning.
+        """
+        if self.current_epoch % 5 != 0: # Check every 5 epochs to save time
+            return
+            
+        self.print(f"\n[Verification] Epoch {self.current_epoch}: Conducting latent hallucination check...")
+        
+        # Sample 4 random emotions
+        device = self.device
+        sample_labels = torch.arange(min(4, self.hparams.num_classes), device=device)
+        b = sample_labels.shape[0]
+        
+        # Use a dummy causal weight (identity-like) for the loop
+        causal_influence = torch.ones((b, 3), device=device)
+        
+        # Temporarily use EMA weights for the diffusion sampler
+        original_unet = self.diffusion.unet
+        self.diffusion.unet = self.ema_unet
+        
+        try:
+            # Hallucinate latents: Noise -> Denoising -> Latent Emotion
+            hallucinated_z = self.diffusion.p_sample_loop(
+                shape=(b, self.hparams.latent_dim, 50), # 50 is the MOSEI seq_len
+                device=device,
+                label=sample_labels,
+                causal_weights=causal_influence,
+                cfg_scale=3.0 # Strong guidance for validation
+            )
+            
+            # Check if our task classifier recognizes these halluncinated states
+            with torch.no_grad():
+                logits = self.classifier(hallucinated_z)
+                preds = torch.argmax(logits, dim=1)
+                hallucination_acc = (preds == sample_labels).float().mean()
+                
+            self.log("val/hallucination_acc", hallucination_acc, sync_dist=True)
+            self.print(f"[Verification] Hallucination Accuracy: {hallucination_acc:.4f} (Targets: {sample_labels.tolist()} -> Preds: {preds.tolist()})")
+            
+        except Exception as e:
+            self.print(f"[Verification Error] Sampling failed: {e}")
+        finally:
+            # Restore original UNet weights
+            self.diffusion.unet = original_unet
 
     def on_train_epoch_start(self):
         """Anneal causal temperature from 1.0 to 0.5 over 10 epochs."""

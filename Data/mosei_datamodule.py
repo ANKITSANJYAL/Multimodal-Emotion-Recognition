@@ -76,9 +76,42 @@ class MoseiDataModule(pl.LightningDataModule):
 
         dataset = mmdataset(dataset_recipe)
 
-        # Align all modalities to the label timestamps
-        print("Aligning modalities to labels (this may take a while)...")
-        dataset.align('labels', collapse_functions=[self._avg_collapse, self._avg_collapse, self._avg_collapse])
+        # --- DeepMind Research Grade: Absolute mmsdk Data Hardening ---
+        # 1. Unify indices across all modalities (sync video IDs)
+        print("Unifying dataset indices...")
+        dataset.unify()
+
+        # 2. Exhaustively verify dimension consistency and prune corrupted entries
+        # Some .csd files have internal mismatches (intervals != features) that crash alignment.
+        # We prune them manually to ensure the dataset is clean for extraction.
+        print("Verifying sequence consistency...")
+        all_keys = set()
+        for seq_key in dataset.computational_sequences.keys():
+            all_keys.update(dataset.computational_sequences[seq_key].data.keys())
+        
+        mismatched_vids = set()
+        for vid in all_keys:
+            for seq_key in dataset.computational_sequences.keys():
+                if vid in dataset.computational_sequences[seq_key].data:
+                    d = dataset.computational_sequences[seq_key].data[vid]
+                    # Robust length check to find corrupted segment entries
+                    if len(d['intervals']) != len(d['features']):
+                        print(f"[Stability Fix] Found mismatch in {vid} for {seq_key}. Pruning.")
+                        mismatched_vids.add(vid)
+                        break
+        
+        if mismatched_vids:
+            print(f"Pruning {len(mismatched_vids)} corrupted IDs from all sequences...")
+            for vid in mismatched_vids:
+                for seq_key in dataset.computational_sequences.keys():
+                    if vid in dataset.computational_sequences[seq_key].data:
+                        del dataset.computational_sequences[seq_key].data[vid]
+        
+        # 3. Skip dataset.align('labels')
+        # FOR MOSEI: Aligning to labels collapses sequences to a single vector,
+        # which breaks our Transformer/Diffusion sequential processing.
+        # We perform manual alignment in _extract_tensors.
+        print("Bypassing mmsdk.align and performing direct sequential extraction...")
 
         # Extract and pad sequences
         print("Extracting tensors and applying sequence padding...")
@@ -133,6 +166,12 @@ class MoseiDataModule(pl.LightningDataModule):
 
         # The aligned dataset keys are video IDs
         for vid in dataset.computational_sequences['labels'].data.keys():
+            # Safety: Ensure ID exists in all modalities (vision, audio, text)
+            if vid not in dataset.computational_sequences['vision'].data or \
+               vid not in dataset.computational_sequences['audio'].data or \
+               vid not in dataset.computational_sequences['text'].data:
+                continue
+
             v = dataset.computational_sequences['vision'].data[vid]['features']
             a = dataset.computational_sequences['audio'].data[vid]['features']
             t = dataset.computational_sequences['text'].data[vid]['features']

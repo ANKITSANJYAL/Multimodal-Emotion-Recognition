@@ -4,6 +4,8 @@ import pytorch_lightning as pl
 from pytorch_lightning.callbacks import ModelCheckpoint, EarlyStopping, LearningRateMonitor
 from pytorch_lightning.loggers import WandbLogger
 import torch
+import datetime
+from pytorch_lightning.strategies import DDPStrategy
 
 from Data.mosei_datamodule import MoseiDataModule
 from modules.affect_diff_module import AffectDiffModule
@@ -13,6 +15,11 @@ def main(cfg: DictConfig):
     # Print the config so it's recorded in the SLURM output logs
     print(OmegaConf.to_yaml(cfg))
 
+    # Extended Timeout for massive data alignment (2 hours)
+    import os
+    os.environ["NCCL_BLOCKING_WAIT"] = "1"
+    os.environ["NCCL_ASYNC_ERROR_HANDLING"] = "1"
+    
     # 1. Initialize PyTorch Lightning Seed for Reproducibility
     pl.seed_everything(cfg.seed, workers=True)
 
@@ -51,7 +58,7 @@ def main(cfg: DictConfig):
             save_top_k=3,
             filename="affect-diff-{epoch:02d}-{val_acc:.3f}"
         ),
-        EarlyStopping(monitor="val_loss", patience=15, mode="min"),
+        EarlyStopping(monitor="val_loss", patience=50, mode="min"),
         LearningRateMonitor(logging_interval="step")
     ]
 
@@ -60,7 +67,10 @@ def main(cfg: DictConfig):
         max_epochs=cfg.trainer.epochs,
         accelerator="gpu" if torch.cuda.is_available() else "cpu",
         devices=cfg.trainer.devices,          # E.g., 8 GPUs
-        strategy="ddp_find_unused_parameters_true" if cfg.trainer.devices > 1 else "auto", # Distributed Data Parallel
+        strategy=DDPStrategy(
+            find_unused_parameters=True, 
+            timeout=datetime.timedelta(seconds=7200)
+        ) if cfg.trainer.devices > 1 else "auto", # Distributed Data Parallel
         precision=32,                         # Switch to full precision for maximum stability in Counterfactual Hallucination
         gradient_clip_val=1.0,                # DeepMind standard: prevent exploding gradients
         gradient_clip_algorithm="norm",
