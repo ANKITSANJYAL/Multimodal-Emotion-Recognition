@@ -7,10 +7,10 @@ class AudioEncoder(nn.Module):
     def __init__(self, input_dim=74, hidden_dim=512, num_heads=8, num_layers=3, dropout=0.2):
         super().__init__()
 
-        # Audio is continuous; Conv1d smoothing is mathematically superior here
+        # Audio is continuous; Conv1d smoothing + LayerNorm is mathematically robust
         self.local_conv = nn.Sequential(
             nn.Conv1d(input_dim, hidden_dim, kernel_size=5, padding=2),
-            nn.BatchNorm1d(hidden_dim),
+            nn.GroupNorm(8, hidden_dim), # Better than global BN for non-stationary signals
             nn.GELU(),
             nn.Dropout(dropout)
         )

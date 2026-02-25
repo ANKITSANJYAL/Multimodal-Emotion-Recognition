@@ -17,8 +17,11 @@ class CausalAttentionGraph(nn.Module):
         self.query_proj = nn.Linear(latent_dim, latent_dim)
         self.key_proj = nn.Linear(latent_dim, latent_dim)
 
-        # Gumbel-Softmax temperature for sparse, DAG-like edge generation
-        self.register_buffer('temperature', torch.tensor(0.5))
+        # Gumbel-Softmax temperature: start high (soft edges) and anneal over time
+        self.register_buffer('temperature', torch.tensor(1.0))
+
+    def set_temperature(self, temp):
+        self.temperature.copy_(torch.tensor(temp))
 
     def forward(self, z_t, z_a, z_v):
         """
@@ -39,9 +42,11 @@ class CausalAttentionGraph(nn.Module):
         # Calculate unnormalized attention scores (Batch, Num_Nodes, Num_Nodes)
         # Scaled dot-product
         scores = torch.bmm(queries, keys.transpose(1, 2)) / (self.latent_dim ** 0.5)
+        
+        # Stability fix: Clamp scores to prevent overflow in softmax
+        scores = torch.clamp(scores, min=-20.0, max=20.0)
 
         # Apply Gumbel-Softmax to force sparse, discrete causal edges
-        # instead of a dense, uninterpretable attention matrix
         adj_matrix = F.gumbel_softmax(scores, tau=self.temperature, hard=False, dim=-1)
 
         # Mask out self-loops (a modality shouldn't causally influence itself in this graph)

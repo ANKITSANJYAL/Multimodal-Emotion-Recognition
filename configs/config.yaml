@@ -23,11 +23,13 @@ model:
   num_classes: 6                       # MOSEI emotions (Happy, Sad, Angry, Fear, Disgust, Surprise)
   text_dim: 300                        # GloVe embeddings (or 768 if you swap to RoBERTa later)
   audio_dim: 74                        # COVAREP acoustic features
-  video_dim: 42                        # VisualFacet42 facial action units
-  hidden_dim: 512                      # Intermediate TCN projection size
+  video_dim: 35                       # VisualFacet42 facial action units (already correct)
+  hidden_dim: 256                      # Intermediate TCN projection size
   latent_dim: 256                      # The size of our Shared Disentangled Affective Space
   beta_kl: 5.0                         # Pressure on the Total Correlation / Disentanglement
   lambda_diff: 1.0                     # Weight of the Diffusion Generative Loss vs Classification
+  lambda_causal: 0.1                   # Sparsity penalty for the Causal Attention Graph
+  cfg_scale: 3.0                       # Classifier-Free Guidance scale for counterfactual generation
 
 # ------------------------------------------
 # Diffusion Generative Prior

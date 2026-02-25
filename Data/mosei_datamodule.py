@@ -3,7 +3,10 @@ import torch
 import numpy as np
 import pytorch_lightning as pl
 from torch.utils.data import Dataset, DataLoader
-from mmsdk import mmdataset
+# NOTE: Importing the heavy `mmsdk` package at module import time causes an
+# ImportError on systems without it installed. We import it lazily inside
+# `prepare_data()` only when alignment from raw .csd files is required. This
+# allows the module to be imported when a cached aligned tensor exists.
 
 class MoseiDataset(Dataset):
     """
@@ -58,6 +61,18 @@ class MoseiDataModule(pl.LightningDataModule):
             'text': os.path.join(self.data_dir, 'CMU_MOSEI_TimestampedWordVectors.csd'),
             'labels': os.path.join(self.data_dir, 'CMU_MOSEI_Labels.csd')
         }
+
+        # Lazy import: try to find a callable constructor for an mmdataset-like
+        # object in the installed mmsdk package. Provide a helpful error if it's
+        # not installed or has an unexpected API.
+        try:
+            from mmsdk import mmdatasdk
+            mmdataset = mmdatasdk.mmdataset
+        except (ImportError, AttributeError):
+            raise ImportError(
+                "Could not locate 'mmdataset' in the 'mmsdk' package. \n"
+                "Please ensure mmsdk is installed and accessible in the 'emotion_rec' environment."
+            )
 
         dataset = mmdataset(dataset_recipe)
 
@@ -128,19 +143,45 @@ class MoseiDataModule(pl.LightningDataModule):
             a_pad = self._pad_sequence(a, self.seq_len)
             t_pad = self._pad_sequence(t, self.seq_len)
 
-            # We take the first label dimension (typically sentiment/emotion score)
-            l_val = l[0][0] if len(l) > 0 else 0.0
+            # Correct MoSEI Header: [sentiment, happy, sad, angry, fear, disgust, surprise]
+            # Primary emotion is the argmax of the 6 intensity scores (indices 1-6)
+            if len(l) > 0:
+                intensities = l[0][1:7] # Extract indices 1 to 6
+                # If all intensities are zero, default to a neutral category or handle
+                # But for MoSEI, we'll take the max intensity as the label
+                l_val = np.argmax(intensities) if np.sum(intensities) > 0 else 0
+            else:
+                l_val = 0
 
             vision_list.append(v_pad)
             audio_list.append(a_pad)
             text_list.append(t_pad)
             label_list.append(l_val)
 
+        # 1. Convert to tensors with NaN-to-Zero robustness
+        v_tensor = torch.nan_to_num(torch.tensor(np.stack(vision_list), dtype=torch.float32))
+        a_tensor = torch.nan_to_num(torch.tensor(np.stack(audio_list), dtype=torch.float32))
+        t_tensor = torch.nan_to_num(torch.tensor(np.stack(text_list), dtype=torch.float32))
+        l_tensor = torch.tensor(label_list, dtype=torch.long)
+
+        # 2. Research-Grade Stability: Global Modal-wise Normalization
+        # This prevents gradient explosions from unnormalized features hitting the VAE
+        def normalize(tensor):
+            mask = (tensor.abs().sum(dim=-1) > 0)
+            if mask.sum() == 0: return tensor
+            mean = tensor[mask].mean()
+            std = tensor[mask].std() + 1e-8
+            return (tensor - mean) / std
+
+        v_tensor = normalize(v_tensor)
+        a_tensor = normalize(a_tensor)
+        t_tensor = normalize(t_tensor)
+
         return {
-            'vision': torch.tensor(np.stack(vision_list), dtype=torch.float32),
-            'audio': torch.tensor(np.stack(audio_list), dtype=torch.float32),
-            'text': torch.tensor(np.stack(text_list), dtype=torch.float32),
-            'labels': torch.tensor(label_list, dtype=torch.float32)
+            'vision': v_tensor,
+            'audio': a_tensor,
+            'text': t_tensor,
+            'labels': l_tensor
         }
 
     def _pad_sequence(self, seq, target_len):

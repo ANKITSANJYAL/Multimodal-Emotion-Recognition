@@ -68,9 +68,9 @@ class AffectiveDiffusion(nn.Module):
 
         return sqrt_alphas_cumprod_t * x_start + sqrt_one_minus_alphas_cumprod_t * noise
 
-    def p_losses(self, x_start, t, noise=None):
+    def p_losses(self, x_start, t, label=None, causal_weights=None, noise=None):
         """
-        Calculates the training loss for a specific timestep.
+        Calculates the conditional training loss for a specific timestep.
         """
         if noise is None:
             noise = torch.randn_like(x_start)
@@ -78,24 +78,36 @@ class AffectiveDiffusion(nn.Module):
         # 1. Create noisy latent $x_t$
         x_noisy = self.q_sample(x_start=x_start, t=t, noise=noise)
 
-        # 2. Predict noise using our 1D U-Net
-        predicted_noise = self.unet(x_noisy, t)
+        # 2. Predict noise using our 1D U-Net (with Causal & Label conditioning)
+        predicted_noise = self.unet(x_noisy, t, label=label, causal_weights=causal_weights)
 
         # 3. L2 Loss between actual noise and predicted noise
         loss = torch.nn.functional.mse_loss(noise, predicted_noise)
         return loss
 
     @torch.no_grad()
-    def p_sample(self, x, t, t_index):
+    def p_sample(self, x, t, t_index, label=None, causal_weights=None, cfg_scale=1.0):
         """
-        A single step of the Reverse Denoising Process.
+        A single step of the Reverse Denoising Process with CFG support.
         """
         betas_t = extract(self.betas, t, x.shape)
         sqrt_one_minus_alphas_cumprod_t = extract(self.sqrt_one_minus_alphas_cumprod, t, x.shape)
         sqrt_recip_alphas_t = extract(torch.sqrt(1.0 / (1. - self.betas)), t, x.shape)
 
-        # U-Net predicts the noise
-        predicted_noise = self.unet(x, t)
+        # Classifier-Free Guidance implementation
+        if cfg_scale > 1.0 and label is not None:
+            # Predict noise with and without the label condition
+            # We use num_classes as the 'null' label
+            null_label = torch.full_like(label, fill_value=self.unet.label_emb.num_embeddings - 1)
+            
+            # Predict noise for both
+            cond_noise = self.unet(x, t, label=label, causal_weights=causal_weights)
+            uncond_noise = self.unet(x, t, label=null_label, causal_weights=causal_weights)
+            
+            # Interpolate
+            predicted_noise = uncond_noise + cfg_scale * (cond_noise - uncond_noise)
+        else:
+            predicted_noise = self.unet(x, t, label=label, causal_weights=causal_weights)
 
         # Calculate the mean of the posterior
         model_mean = sqrt_recip_alphas_t * (x - betas_t * predicted_noise / sqrt_one_minus_alphas_cumprod_t)
@@ -105,23 +117,18 @@ class AffectiveDiffusion(nn.Module):
         else:
             posterior_variance_t = extract(self.posterior_variance, t, x.shape)
             noise = torch.randn_like(x)
-            # Add stochasticity based on learned variance
             return model_mean + torch.sqrt(posterior_variance_t) * noise
 
     @torch.no_grad()
-    def p_sample_loop(self, shape, device):
+    def p_sample_loop(self, shape, device, label=None, causal_weights=None, cfg_scale=1.0):
         """
         The full counterfactual hallucination loop.
-        Starts with pure Gaussian noise $x_T \sim \mathcal{N}(0, \mathbf{I})$
-        and iterates backward to $x_0$.
         """
         b = shape[0]
-        # Start from pure noise
         img = torch.randn(shape, device=device)
 
-        # Iterate from T-1 down to 0
-        for i in tqdm(reversed(range(0, self.timesteps)), desc='Denoising Counterfactual', total=self.timesteps):
+        for i in tqdm(reversed(range(0, self.timesteps)), desc='Denoising', total=self.timesteps):
             t = torch.full((b,), i, device=device, dtype=torch.long)
-            img = self.p_sample(img, t, i)
+            img = self.p_sample(img, t, i, label=label, causal_weights=causal_weights, cfg_scale=cfg_scale)
 
         return img

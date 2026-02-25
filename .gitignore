@@ -1,5 +1,52 @@
-/data
-/checkpoints
-/wandb
-.gitignore
-/.pytest_cache
+# === Affect-Diff Pro .gitignore ===
+
+# Data & Large Artifacts
+data/
+datasets/
+*.pt
+*.pth
+*.h5
+*.csd
+
+# Training Artifacts
+checkpoints/
+lightning_logs/
+wandb/
+outputs/
+multirun/
+
+# Python Environment & Caches
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+env/
+venv/
+.env
+.venv
+pip-log.txt
+pip-delete-this-directory.txt
+.tox/
+.coverage
+.cache
+nosetests.xml
+coverage.xml
+*.cover
+.pytest_cache/
+
+# OS/System Files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+.ipynb_checkpoints
+
+# Project Specific
+report.pdf
+*.log
+output.txt
+.gemini/

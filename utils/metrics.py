@@ -21,49 +21,56 @@ class AffectiveCausalMetrics:
         return {"Accuracy": acc.item(), "Macro_F1": f1.item()}
 
     @torch.no_grad()
-    def calculate_causal_sensitivity(self, model, batch, target_modality='audio'):
+    def calculate_causal_sensitivity(self, model, batch, target_modality='audio', cfg_scale=3.0):
         """
-        Calculates how much the prediction relies on a specific modality
-        by generating a diffusion-based counterfactual.
+        Calculates modality reliance by generating a diffusion-based counterfactual,
+        now guided by the causal graph and classifier-free guidance.
         """
         model.eval()
         text, audio, video = batch['text'], batch['audio'], batch['vision']
+        labels = batch['labels'].long()
 
         # 1. Factual Prediction P(Y | X)
-        z_factual, _, _ = model.bottleneck(text, audio, video)
+        z_factual, _, _, adj_matrix = model.bottleneck(text, audio, video)
         p_factual = F.softmax(model.classifier(z_factual), dim=1)
+        
+        # Extract causal weights for conditioning
+        causal_influence = adj_matrix.sum(dim=1)
 
         # 2. Intervention: do(X_m = 0)
-        # We zero out the raw features of the target modality
         if target_modality == 'audio':
             audio_cf = torch.zeros_like(audio)
-            z_ablated, _, _ = model.bottleneck(text, audio_cf, video)
+            z_ablated, _, _, _ = model.bottleneck(text, audio_cf, video)
         elif target_modality == 'video':
             video_cf = torch.zeros_like(video)
-            z_ablated, _, _ = model.bottleneck(text, audio, video_cf)
+            z_ablated, _, _, _ = model.bottleneck(text, audio, video_cf)
         else:
             text_cf = torch.zeros_like(text)
-            z_ablated, _, _ = model.bottleneck(text_cf, audio, video)
+            z_ablated, _, _, _ = model.bottleneck(text_cf, audio, video)
 
-        # 3. Generative Healing (The Novelty)
-        # Instead of classifying the ablated latent space, we use our Diffusion
-        # model to "hallucinate" a plausible affective state using the remaining modalities.
-        # We add noise to t=T/2 (partial destruction) and denoise to heal the missing gap.
-
+        # 3. Generative Causal Healing
+        # We use CFG to force the model to 'hallucinate' the most likely affective 
+        # state given the remaining modalities and the causal context.
         b = text.shape[0]
         t_mid = torch.full((b,), model.diffusion.timesteps // 2, device=self.device, dtype=torch.long)
-
-        # Partially noise the ablated latent
         z_noisy = model.diffusion.q_sample(z_ablated, t_mid)
 
-        # Denoise back to t=0 (The model "fills in" the missing affective gap)
         z_counterfactual = z_noisy
         for i in reversed(range(0, model.diffusion.timesteps // 2)):
             t_curr = torch.full((b,), i, device=self.device, dtype=torch.long)
-            z_counterfactual = model.diffusion.p_sample(z_counterfactual, t_curr, i)
+            z_counterfactual = model.diffusion.p_sample(
+                z_counterfactual, t_curr, i, 
+                label=labels, 
+                causal_weights=causal_influence,
+                cfg_scale=cfg_scale
+            )
 
         # 4. Counterfactual Prediction
         p_counterfactual = F.softmax(model.classifier(z_counterfactual), dim=1)
+
+        # 5. Calculate L1 Distance (Causal Sensitivity)
+        causal_sensitivity = torch.norm(p_factual - p_counterfactual, p=1, dim=1).mean()
+        return causal_sensitivity.item()
 
         # 5. Calculate L1 Distance between distributions (Causal Sensitivity)
         # Shape: (Batch,) -> Mean scalar

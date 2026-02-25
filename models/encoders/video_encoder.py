@@ -4,13 +4,13 @@ from .text_encoder import PositionalEncoding
 
 class VideoEncoder(nn.Module):
     """Conformer-lite architecture for facial action unit sequences (VisualFacet42)."""
-    def __init__(self, input_dim=42, hidden_dim=512, num_heads=8, num_layers=3, dropout=0.2):
+    def __init__(self, input_dim=35, hidden_dim=512, num_heads=8, num_layers=3, dropout=0.2):
         super().__init__()
 
-        # Visual features benefit from local temporal context (micro-expressions)
+        # Visual features benefit from local temporal context + GroupNorm stability
         self.local_conv = nn.Sequential(
             nn.Conv1d(input_dim, hidden_dim, kernel_size=3, padding=1),
-            nn.BatchNorm1d(hidden_dim),
+            nn.GroupNorm(8, hidden_dim), # Stable across varied batch distributions
             nn.GELU(),
             nn.Dropout(dropout)
         )
@@ -25,6 +25,7 @@ class VideoEncoder(nn.Module):
         self.layer_norm = nn.LayerNorm(hidden_dim)
 
     def forward(self, x):
+        # Conv1d expects (Batch, Channels, Time)
         # Conv1d expects (Batch, Channels, Time)
         x = x.permute(0, 2, 1)
         x = self.local_conv(x)
