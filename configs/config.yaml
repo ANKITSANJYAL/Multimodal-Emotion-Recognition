@@ -26,9 +26,9 @@ model:
   video_dim: 35                        # VisualFacet42 facial action units
   hidden_dim: 512                      # Increased capacity for SOTA push
   latent_dim: 512                      # Wider latent manifold for diffusion
-  beta_kl: 1.0                         # Lower KL pressure to prioritize task accuracy
-  lambda_diff: 1.0                     # Balance generative prior
-  lambda_causal: 0.05                  # Allow more causal flow
+  beta_kl: 1.0                         # Reduced to prioritize task fidelity over gaussianity
+  lambda_diff: 5.0                     # Significantly increased to force manifold learning
+  lambda_causal: 0.1                   # Standard causal penalty
   cfg_scale: 4.0                       # Stronger guidance for cleaner sampling
 
 # ------------------------------------------
@@ -43,7 +43,7 @@ diffusion:
 # ------------------------------------------
 trainer:
   epochs: 200
-  lr: 2e-5                             # Slower LR for stable convergence at 80%+
+  lr: 5e-5                             # Tuned for Attention Pooling stability
   weight_decay: 1e-3                   # Stronger regularization for generalization
   devices: 2                           # Use 2 GPUs for DDP
   precision: 32                        # Full precision for maximum generative stability

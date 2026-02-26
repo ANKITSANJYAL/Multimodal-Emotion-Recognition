@@ -51,6 +51,11 @@ class LatentBottleneck(nn.Module):
         self.audio_enc = AudioEncoder(input_dim=audio_dim, hidden_dim=hidden_dim)
         self.video_enc = VideoEncoder(input_dim=video_dim, hidden_dim=hidden_dim)
 
+        # DeepMind Level: Per-Modality Normalization to break energy-level bias
+        self.text_norm = nn.LayerNorm(hidden_dim)
+        self.audio_norm = nn.LayerNorm(hidden_dim)
+        self.video_norm = nn.LayerNorm(hidden_dim)
+
         # 2. Causal Architecture (DeepMind Level Interpretability)
         self.causal_graph = CausalAttentionGraph(latent_dim=hidden_dim, num_nodes=3)
         
@@ -82,6 +87,11 @@ class LatentBottleneck(nn.Module):
         t_feat = self.text_enc(text)
         a_feat = self.audio_enc(audio)
         v_feat = self.video_enc(video)
+
+        # Normalize energy levels before Causal Reasoning
+        t_feat = self.text_norm(t_feat)
+        a_feat = self.audio_norm(a_feat)
+        v_feat = self.video_norm(v_feat)
 
         # Step A: Compute Causal Adjacency Matrix
         # This tells us which modalities are most influential in the current batch

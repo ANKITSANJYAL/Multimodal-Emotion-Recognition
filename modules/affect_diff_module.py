@@ -41,11 +41,10 @@ class AffectDiffModule(pl.LightningModule):
             latent_dim=latent_dim
         )
 
-        # 2. The Task Classifier (Predicts emotion directly from z)
-        # We pool across the time dimension (Sequence Length) and project to classes
+        # 2. The Task Classifier (Transformer-Attention Pooling)
+        # Instead of averaging, we use a learnable Query to 'attend' to expressiveness
+        self.attention_query = nn.Parameter(torch.randn(1, 1, latent_dim))
         self.classifier = nn.Sequential(
-            nn.AdaptiveAvgPool1d(1),
-            nn.Flatten(),
             nn.Linear(latent_dim, latent_dim // 2),
             nn.LayerNorm(latent_dim // 2),
             nn.GELU(),
@@ -64,10 +63,26 @@ class AffectDiffModule(pl.LightningModule):
             param.requires_grad = False
         self.ema_decay = 0.999
 
+    def _pool_features(self, z):
+        """
+        Applies learnable Attention Pooling to the latent sequence.
+        z: (Batch, Seq_Len, latent_dim)
+        Returns: (Batch, latent_dim)
+        """
+        # Attention Pooling: (B, 1, Dim) @ (B, Dim, Seq) -> (B, 1, Seq)
+        z_perm = z.transpose(1, 2)
+        attn_weights = torch.matmul(self.attention_query.expand(z.shape[0], -1, -1), z_perm)
+        attn_weights = F.softmax(attn_weights / (self.hparams.latent_dim ** 0.5), dim=-1)
+        
+        # Weighted sum: (B, 1, Seq) @ (B, Seq, Dim) -> (B, Dim)
+        z_pooled = torch.matmul(attn_weights, z).squeeze(1)
+        return z_pooled
+
     def forward(self, text, audio, video):
         """Standard forward pass."""
-        z_permuted, _, _, _ = self.bottleneck(text, audio, video)
-        logits = self.classifier(z_permuted)
+        z, _, _, _ = self.bottleneck(text, audio, video) # (B, Seq, Dim)
+        z_pooled = self._pool_features(z)
+        logits = self.classifier(z_pooled)
         return logits
 
     def shared_step(self, batch, batch_idx, stage="train"):
@@ -78,14 +93,29 @@ class AffectDiffModule(pl.LightningModule):
         audio = torch.nan_to_num(audio)
         video = torch.nan_to_num(video)
 
+        # --- DeepMind Research Grade: Stochastic Modality Ablation ---
+        # Forces model to not rely on just one modality (e.g. Text)
+        if stage == "train":
+            # 10% chance to drop each modality UNCORRELATEDLY
+            # This ensures the model learns to handle missing/noisy sensors
+            m_drop = torch.rand(3, device=self.device)
+            if m_drop[0] < 0.1: text = torch.zeros_like(text)
+            if m_drop[1] < 0.1: audio = torch.zeros_like(audio)
+            if m_drop[2] < 0.1: video = torch.zeros_like(video)
+
         # Step 1: Encode into latent space and extract Causal Graph
         z_permuted, mu, logvar, adj_matrix = self.bottleneck(text, audio, video)
 
         # Force z into a safe numerical box
         z_permuted = torch.clamp(z_permuted, min=-10.0, max=10.0)
 
-        # Step 2: Task Loss (Emotion Classification)
-        logits = self.classifier(z_permuted)
+        # Step 2: Task Loss (Emotion Classification with Attention Pooling)
+        # bottleneck returns (B, Dim, Seq) for historical reasons, we pool it
+        # z here is (B, Seq, Dim)
+        z = z_permuted.permute(0, 2, 1)
+        z_pooled = self._pool_features(z)
+
+        logits = self.classifier(z_pooled)
         loss_task = F.cross_entropy(logits, labels.long())
 
         # Step 3: Disentanglement Loss (Beta-VAE)
@@ -98,8 +128,8 @@ class AffectDiffModule(pl.LightningModule):
         b = text.shape[0]
         t = torch.randint(0, self.diffusion.timesteps, (b,), device=self.device).long()
         
-        # Classifier-Free Guidance Training: 10% chance to drop label
-        drop_mask = (torch.rand(b, device=self.device) < 0.1).long()
+        # Classifier-Free Guidance Training: Increase to 20% for stronger conditioning
+        drop_mask = (torch.rand(b, device=self.device) < 0.2).long()
         null_label = self.hparams.num_classes
         labels_cond = labels.long() * (1 - drop_mask) + null_label * drop_mask
 
@@ -171,44 +201,54 @@ class AffectDiffModule(pl.LightningModule):
         if self.current_epoch % 5 != 0: # Check every 5 epochs to save time
             return
             
-        self.print(f"\n[Verification] Epoch {self.current_epoch}: Conducting latent hallucination check...")
-        
-        # Sample 4 random emotions
-        device = self.device
-        sample_labels = torch.arange(min(4, self.hparams.num_classes), device=device)
-        b = sample_labels.shape[0]
-        
-        # Use a dummy causal weight (identity-like) for the loop
-        causal_influence = torch.ones((b, 3), device=device)
-        
-        # Temporarily use EMA weights for the diffusion sampler
-        original_unet = self.diffusion.unet
-        self.diffusion.unet = self.ema_unet
-        
-        try:
-            # Hallucinate latents: Noise -> Denoising -> Latent Emotion
-            hallucinated_z = self.diffusion.p_sample_loop(
-                shape=(b, self.hparams.latent_dim, 50), # 50 is the MOSEI seq_len
-                device=device,
-                label=sample_labels,
-                causal_weights=causal_influence,
-                cfg_scale=3.0 # Strong guidance for validation
-            )
+        # DDP Stability: Only run the heavy sampling on Rank 0
+        if self.global_rank == 0:
+            self.print(f"\n[Verification] Epoch {self.current_epoch}: Conducting latent hallucination check...")
             
-            # Check if our task classifier recognizes these halluncinated states
-            with torch.no_grad():
-                logits = self.classifier(hallucinated_z)
-                preds = torch.argmax(logits, dim=1)
-                hallucination_acc = (preds == sample_labels).float().mean()
+            # Sample 4 random emotions
+            device = self.device
+            sample_labels = torch.arange(min(4, self.hparams.num_classes), device=device)
+            b = sample_labels.shape[0]
+            
+            # Use a dummy causal weight (identity-like) for the loop
+            causal_influence = torch.ones((b, 3), device=device)
+            
+            # Temporarily use EMA weights for the diffusion sampler
+            original_unet = self.diffusion.unet
+            self.diffusion.unet = self.ema_unet
+            
+            try:
+                # Hallucinate latents: Noise -> Denoising -> Latent Emotion
+                hallucinated_z = self.diffusion.p_sample_loop(
+                    shape=(b, self.hparams.latent_dim, 50), # 50 is the MOSEI seq_len
+                    device=device,
+                    label=sample_labels,
+                    causal_weights=causal_influence,
+                    cfg_scale=4.0 # Slightly higher guidance for SOTA push
+                )
                 
-            self.log("val/hallucination_acc", hallucination_acc, sync_dist=True)
-            self.print(f"[Verification] Hallucination Accuracy: {hallucination_acc:.4f} (Targets: {sample_labels.tolist()} -> Preds: {preds.tolist()})")
-            
-        except Exception as e:
-            self.print(f"[Verification Error] Sampling failed: {e}")
-        finally:
-            # Restore original UNet weights
-            self.diffusion.unet = original_unet
+                # Check if our task classifier recognizes these halluncinated states
+                with torch.no_grad():
+                    # Pool back to (B, Dim) before classification
+                    z_hallucinated = hallucinated_z.permute(0, 2, 1)
+                    z_pooled = self._pool_features(z_hallucinated)
+                    logits = self.classifier(z_pooled)
+                    preds = torch.argmax(logits, dim=1)
+                    hallucination_acc = (preds == sample_labels).float().mean()
+                    
+                self.log("val/hallucination_acc", hallucination_acc, rank_zero_only=True)
+                self.print(f"[Verification] Hallucination Accuracy: {hallucination_acc:.4f} (Targets: {sample_labels.tolist()} -> Preds: {preds.tolist()})")
+                
+            except Exception as e:
+                self.print(f"[Verification Error] Sampling failed: {e}")
+            finally:
+                # Restore original UNet weights
+                self.diffusion.unet = original_unet
+        
+        # Ensure all ranks wait for Rank 0 to finish sampling before proceeding
+        # This prevents the collective timeout during the transition to the next hook
+        if torch.distributed.is_initialized():
+            torch.distributed.barrier()
 
     def on_train_epoch_start(self):
         """Anneal causal temperature from 1.0 to 0.5 over 10 epochs."""
