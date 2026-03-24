@@ -10,9 +10,9 @@ seed: 42
 # Data Configuration
 # ------------------------------------------
 data:
-  data_dir: "data"                     # Raw CMU-MOSEI .csd files location
+  data_dir: "data"                     # Raw CMU-MOSEI .csd files location (matches workspace structure)
   cache_dir: "data/cache"              # Where the pre-aligned PyTorch tensors go
-  batch_size: 64                       # DeepMind standard for MOSEI stability
+  batch_size: 64                       # Maximize this based on your GPU VRAM
   num_workers: 8                       # Keep GPUs fed with data
   seq_len: 50                          # Standard temporal padding for MOSEI
 
@@ -20,16 +20,16 @@ data:
 # Model Architecture & Bottleneck
 # ------------------------------------------
 model:
-  num_classes: 6                       # MOSEI emotions
-  text_dim: 300                        # GloVe (increase to 768 for RoBERTa)
+  num_classes: 6                       # MOSEI emotions (Happy, Sad, Angry, Fear, Disgust, Surprise)
+  text_dim: 300                        # GloVe embeddings (or 768 if you swap to RoBERTa later)
   audio_dim: 74                        # COVAREP acoustic features
-  video_dim: 35                        # VisualFacet42 facial action units
-  hidden_dim: 512                      # Increased capacity for SOTA push
-  latent_dim: 512                      # Wider latent manifold for diffusion
-  beta_kl: 1.0                         # Reduced to prioritize task fidelity over gaussianity
-  lambda_diff: 5.0                     # Significantly increased to force manifold learning
-  lambda_causal: 0.1                   # Standard causal penalty
-  cfg_scale: 4.0                       # Stronger guidance for cleaner sampling
+  video_dim: 35                       # VisualFacet42 facial action units (already correct)
+  hidden_dim: 512                      # Intermediate TCN projection size
+  latent_dim: 256                      # The size of our Shared Disentangled Affective Space
+  beta_kl: 5.0                         # Pressure on the Total Correlation / Disentanglement
+  lambda_diff: 1.0                     # Weight of the Diffusion Generative Loss vs Classification
+  lambda_causal: 0.1                   # Sparsity penalty for the Causal Attention Graph
+  cfg_scale: 3.0                       # Classifier-Free Guidance scale for counterfactual generation
 
 # ------------------------------------------
 # Diffusion Generative Prior
@@ -42,11 +42,11 @@ diffusion:
 # Training & Optimization
 # ------------------------------------------
 trainer:
-  epochs: 200
-  lr: 5e-5                             # Tuned for Attention Pooling stability
-  weight_decay: 1e-3                   # Stronger regularization for generalization
+  epochs: 100
+  lr: 1e-4                             # Base learning rate for AdamW
+  weight_decay: 1e-4                   # L2 regularization
   devices: 2                           # Use 2 GPUs for DDP
-  precision: 32                        # Full precision for maximum generative stability
+  precision: "16-mixed"                # Automatic Mixed Precision for faster A100/H100 training
 
 # ------------------------------------------
 # Evaluation & Inference

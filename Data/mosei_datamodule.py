@@ -3,10 +3,7 @@ import torch
 import numpy as np
 import pytorch_lightning as pl
 from torch.utils.data import Dataset, DataLoader
-# NOTE: Importing the heavy `mmsdk` package at module import time causes an
-# ImportError on systems without it installed. We import it lazily inside
-# `prepare_data()` only when alignment from raw .csd files is required. This
-# allows the module to be imported when a cached aligned tensor exists.
+from mmsdk import mmdataset
 
 class MoseiDataset(Dataset):
     """
@@ -61,18 +58,6 @@ class MoseiDataModule(pl.LightningDataModule):
             'text': os.path.join(self.data_dir, 'CMU_MOSEI_TimestampedWordVectors.csd'),
             'labels': os.path.join(self.data_dir, 'CMU_MOSEI_Labels.csd')
         }
-
-        # Lazy import: try to find a callable constructor for an mmdataset-like
-        # object in the installed mmsdk package. Provide a helpful error if it's
-        # not installed or has an unexpected API.
-        try:
-            from mmsdk import mmdatasdk
-            mmdataset = mmdatasdk.mmdataset
-        except (ImportError, AttributeError):
-            raise ImportError(
-                "Could not locate 'mmdataset' in the 'mmsdk' package. \n"
-                "Please ensure mmsdk is installed and accessible in the 'emotion_rec' environment."
-            )
 
         dataset = mmdataset(dataset_recipe)
 
@@ -197,24 +182,12 @@ class MoseiDataModule(pl.LightningDataModule):
             text_list.append(t_pad)
             label_list.append(l_val)
 
-        # 1. Convert to tensors with NaN-to-Zero robustness
+        # Sanitize data: DeepMind level data robustness
+        # Fill all NaNs with 0 to prevent generative fly-away
         v_tensor = torch.nan_to_num(torch.tensor(np.stack(vision_list), dtype=torch.float32))
         a_tensor = torch.nan_to_num(torch.tensor(np.stack(audio_list), dtype=torch.float32))
         t_tensor = torch.nan_to_num(torch.tensor(np.stack(text_list), dtype=torch.float32))
-        l_tensor = torch.tensor(label_list, dtype=torch.long)
-
-        # 2. Research-Grade Stability: Global Modal-wise Normalization
-        # This prevents gradient explosions from unnormalized features hitting the VAE
-        def normalize(tensor):
-            mask = (tensor.abs().sum(dim=-1) > 0)
-            if mask.sum() == 0: return tensor
-            mean = tensor[mask].mean()
-            std = tensor[mask].std() + 1e-8
-            return (tensor - mean) / std
-
-        v_tensor = normalize(v_tensor)
-        a_tensor = normalize(a_tensor)
-        t_tensor = normalize(t_tensor)
+        l_tensor = torch.tensor(label_list, dtype=torch.long) # Labels must be long for CrossEntropy
 
         return {
             'vision': v_tensor,

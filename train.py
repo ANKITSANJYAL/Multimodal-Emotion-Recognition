@@ -4,8 +4,6 @@ import pytorch_lightning as pl
 from pytorch_lightning.callbacks import ModelCheckpoint, EarlyStopping, LearningRateMonitor
 from pytorch_lightning.loggers import WandbLogger
 import torch
-import datetime
-from pytorch_lightning.strategies import DDPStrategy
 
 from Data.mosei_datamodule import MoseiDataModule
 from modules.affect_diff_module import AffectDiffModule
@@ -43,10 +41,6 @@ def main(cfg: DictConfig):
         lambda_diff=cfg.model.lambda_diff
     )
 
-    # Log parameter count for debugging
-    if torch.distributed.is_initialized():
-        print(f"Rank {torch.distributed.get_rank()} parameter count: {sum(p.numel() for p in model.parameters())}")
-
     # 4. Setup Callbacks (Weights & Biases, Checkpointing)
     wandb_logger = WandbLogger(project="Affect-Diff-CVPR", name=cfg.experiment_name)
 
@@ -67,10 +61,7 @@ def main(cfg: DictConfig):
         max_epochs=cfg.trainer.epochs,
         accelerator="gpu" if torch.cuda.is_available() else "cpu",
         devices=cfg.trainer.devices,          # E.g., 8 GPUs
-        strategy=DDPStrategy(
-            find_unused_parameters=True, 
-            timeout=datetime.timedelta(seconds=7200)
-        ) if cfg.trainer.devices > 1 else "auto", # Distributed Data Parallel
+        strategy="ddp_find_unused_parameters_true" if cfg.trainer.devices > 1 else "auto", # Distributed Data Parallel
         precision=32,                         # Switch to full precision for maximum stability in Counterfactual Hallucination
         gradient_clip_val=1.0,                # DeepMind standard: prevent exploding gradients
         gradient_clip_algorithm="norm",

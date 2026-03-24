@@ -26,12 +26,10 @@ class ModalityEncoder(nn.Module):
         return self.net(x)
 
 
-from ..causal_graph import CausalAttentionGraph
-
 class LatentBottleneck(nn.Module):
     """
     Fuses Text, Video, and Audio into a disentangled continuous latent space
-    using the Reparameterization Trick, guided by a Causal Attention Graph.
+    using the Reparameterization Trick.
     """
     def __init__(
         self,
@@ -43,112 +41,84 @@ class LatentBottleneck(nn.Module):
     ):
         super().__init__()
 
-        # Ensure deterministic initialization
-        torch.manual_seed(42)
-
         # 1. Unimodal Encoders
         self.text_enc = TextEncoder(input_dim=text_dim, hidden_dim=hidden_dim)
         self.audio_enc = AudioEncoder(input_dim=audio_dim, hidden_dim=hidden_dim)
         self.video_enc = VideoEncoder(input_dim=video_dim, hidden_dim=hidden_dim)
 
-        # DeepMind Level: Per-Modality Normalization to break energy-level bias
-        self.text_norm = nn.LayerNorm(hidden_dim)
-        self.audio_norm = nn.LayerNorm(hidden_dim)
-        self.video_norm = nn.LayerNorm(hidden_dim)
+        # 2. Multimodal Fusion (Concatenation -> MLP)
+        fused_dim = hidden_dim * 3
+        self.fusion_net = nn.Sequential(
+            nn.Linear(fused_dim, hidden_dim),
+            nn.LayerNorm(hidden_dim),
+            nn.GELU(),
+            nn.Linear(hidden_dim, hidden_dim)
+        )
 
-        # 2. Causal Architecture (DeepMind Level Interpretability)
-        self.causal_graph = CausalAttentionGraph(latent_dim=hidden_dim, num_nodes=3)
-        
-        # 3. Multimodal Fusion (Causal-weighted)
-        # We learn how to integrate modalities based on their causal influence
-        self.fusion_proj = nn.Linear(hidden_dim, hidden_dim)
-
-        # 4. VAE Projections Headers (Normalized for stability)
-        self.header_norm = nn.LayerNorm(hidden_dim)
+        # 3. VAE Projections (Mean and Log-Variance)
         self.fc_mu = nn.Linear(hidden_dim, latent_dim)
         self.fc_logvar = nn.Linear(hidden_dim, latent_dim)
-        
-        self.latent_dim = latent_dim
-        self._init_weights()
 
-    def _init_weights(self):
-        """Research-grade parameter initialization."""
-        for m in self.modules():
-            if isinstance(m, nn.Linear):
-                nn.init.xavier_normal_(m.weight)
-                if m.bias is not None:
-                    nn.init.constant_(m.bias, 0)
-            elif isinstance(m, nn.Conv1d):
-                nn.init.kaiming_normal_(m.weight, mode='fan_out', nonlinearity='relu')
+        self.latent_dim = latent_dim
 
     def encode(self, text, audio, video):
         """Passes modalities through encoders and predicts distribution parameters."""
-        # Extract unimodal features: (Batch, Seq_Len, hidden_dim)
+        # Extract unimodal features
         t_feat = self.text_enc(text)
         a_feat = self.audio_enc(audio)
         v_feat = self.video_enc(video)
 
-        # Normalize energy levels before Causal Reasoning
-        t_feat = self.text_norm(t_feat)
-        a_feat = self.audio_norm(a_feat)
-        v_feat = self.video_norm(v_feat)
-
-        # Step A: Compute Causal Adjacency Matrix
-        # This tells us which modalities are most influential in the current batch
-        adj_matrix = self.causal_graph(t_feat, a_feat, v_feat)
-        
-        # Step B: Causal-Weighted Fusion
-        # Calculate importance of each modality node (sum of incoming causal edges)
-        # Shape: (Batch, 3)
-        causal_influence = adj_matrix.sum(dim=1) 
-        causal_weights = F.softmax(causal_influence, dim=-1) # (Batch, 3)
-
-        # Weighted combination of temporal sequences
-        # (Batch, 3, 1, 1) * (Batch, 3, Seq_Len, Hidden_Dim)
-        stacked_feats = torch.stack([t_feat, a_feat, v_feat], dim=1)
-        weighted_fused = (stacked_feats * causal_weights.unsqueeze(-1).unsqueeze(-1)).sum(dim=1)
-
-        # Final projection before VAE bottleneck
-        fused = self.fusion_proj(weighted_fused)
-        fused = self.header_norm(fused)
+        # Fuse along the feature dimension
+        # Expects inputs of shape: (Batch, Seq_Len, Dim)
+        fused = torch.cat([t_feat, a_feat, v_feat], dim=-1)
+        hidden = self.fusion_net(fused)
 
         # Predict parameters of the Gaussian distribution
-        mu = self.fc_mu(fused)
-        logvar = self.fc_logvar(fused)
+        mu = self.fc_mu(hidden)
+        logvar = self.fc_logvar(hidden)
         
         # Stability fix: Clamp logvar to prevent NaNs during exp() or KL calculation
-        logvar = torch.clamp(logvar, min=-10.0, max=2.0) 
+        logvar = torch.clamp(logvar, min=-10.0, max=5.0) 
         
-        return mu, logvar, adj_matrix
+        return mu, logvar
 
     def reparameterize(self, mu, logvar):
-        """Standard Reparameterization Trick with stability check."""
+        """
+        The Reparameterization Trick: z = mu + epsilon * sigma
+        Allows gradients to flow through the stochastic sampling node.
+        """
         if self.training:
             std = torch.exp(0.5 * logvar)
             eps = torch.randn_like(std)
-            z = mu + eps * std
+            return mu + eps * std
         else:
-            z = mu
-        return torch.clamp(z, min=-10.0, max=10.0)
+            # During inference, we just use the mean for deterministic behavior
+            return mu
 
     def forward(self, text, audio, video):
         """
-        Returns the sampled latent sequence `z` and the causal graph metadata.
+        Returns the sampled latent sequence `z` and the distribution parameters
+        needed to compute the KL-Divergence / Total Correlation loss.
         """
-        mu, logvar, adj_matrix = self.encode(text, audio, video)
-        
-        # Sample from the posterior
+        mu, logvar = self.encode(text, audio, video)
         z = self.reparameterize(mu, logvar)
-        
-        # z shape: (Batch, Seq_Len, latent_dim)
+
+        # z shape: (Batch, Seq_Len, Latent_Dim)
+        # We permute it to (Batch, Latent_Dim, Seq_Len) so it fits into our 1D UNet
         z_permuted = z.permute(0, 2, 1)
-        return z_permuted, mu, logvar, adj_matrix
+
+        return z_permuted, mu, logvar
 
     @staticmethod
     def compute_kl_loss(mu, logvar, beta=5.0):
         """
+        Computes the Kullback-Leibler Divergence against a standard normal prior N(0, I).
+        By setting beta > 1 (Beta-VAE approach), we put heavier pressure on the
+        bottleneck, which mathematically forces Total Correlation (disentanglement)
+        between the latent variables.
+
         Math: $$D_{KL}(q(z|x) || p(z)) = -0.5 \sum (1 + \log(\sigma^2) - \mu^2 - \sigma^2)$$
         """
         # Loss shape: (Batch, Seq_Len) -> reduced to scalar
-        kl_div = -0.5 * torch.sum(1 + logvar - mu.pow(2) - logvar.exp().clamp(max=100.0), dim=-1)
+        kl_div = -0.5 * torch.sum(1 + logvar - mu.pow(2) - logvar.exp(), dim=-1)
         return beta * kl_div.mean()
