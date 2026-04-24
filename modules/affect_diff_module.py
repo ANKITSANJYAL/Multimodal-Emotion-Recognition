@@ -13,7 +13,6 @@ import torch.nn as nn
 import torch.nn.functional as F
 import pytorch_lightning as pl
 from torch.optim import AdamW
-from torch.optim.lr_scheduler import CosineAnnealingLR
 
 from models.fusion.latent_bottleneck import LatentBottleneck
 from models.diffusion.unet_1d import UNet1D
@@ -84,6 +83,9 @@ class AffectDiffModule(pl.LightningModule):
         use_causal_graph: bool = True,
         use_augmentation: bool = True,
         use_beta_tc_vae: bool = False,
+        # ── Focal loss ────────────────────────────────────────────────────
+        use_focal_loss: bool = False,
+        focal_gamma: float = 2.0,
     ) -> None:
         super().__init__()
         self.save_hyperparameters()
@@ -109,11 +111,17 @@ class AffectDiffModule(pl.LightningModule):
 
         # ── 2. Attention Pooling + Task Classifier ────────────────────────
         self.attention_query = nn.Parameter(torch.randn(1, 1, latent_dim))
+        # Two dropout layers: one inside the hidden block, one before the final projection.
+        # 0.4 > previous 0.3 — important for regularising on 1956 training samples.
         self.classifier = nn.Sequential(
+            nn.Linear(latent_dim, latent_dim),
+            nn.LayerNorm(latent_dim),
+            nn.GELU(),
+            nn.Dropout(0.4),
             nn.Linear(latent_dim, latent_dim // 2),
             nn.LayerNorm(latent_dim // 2),
             nn.GELU(),
-            nn.Dropout(0.3),
+            nn.Dropout(0.4),
             nn.Linear(latent_dim // 2, num_classes),
         )
 
@@ -159,13 +167,51 @@ class AffectDiffModule(pl.LightningModule):
     # ──────────────────────────────────────────────────────────────────────
 
     def _pool_features(self, z: torch.Tensor) -> torch.Tensor:
-        """Learnable attention pooling: (B, L, d_z) -> (B, d_z)."""
+        """Mean + attention pooling: (B, L, d_z) -> (B, d_z).
+
+        Mean pooling captures global context; attention pooling selects salient
+        frames. Their average is more robust than either alone, especially when
+        the attention head hasn't converged yet in early training.
+        """
+        mean_pool = z.mean(dim=1)  # (B, d_z)
         attn = torch.matmul(
             self.attention_query.expand(z.shape[0], -1, -1),
             z.transpose(1, 2),
         )
         attn = F.softmax(attn / (self.hparams.latent_dim ** 0.5), dim=-1)
-        return torch.matmul(attn, z).squeeze(1)
+        attn_pool = torch.matmul(attn, z).squeeze(1)  # (B, d_z)
+        return (mean_pool + attn_pool) * 0.5
+
+    # ──────────────────────────────────────────────────────────────────────
+    # FOCAL CROSS-ENTROPY
+    # ──────────────────────────────────────────────────────────────────────
+
+    @staticmethod
+    def _focal_cross_entropy(
+        logits: torch.Tensor,
+        labels: torch.Tensor,
+        gamma: float = 2.0,
+        weight: Optional[torch.Tensor] = None,
+        label_smoothing: float = 0.0,
+    ) -> torch.Tensor:
+        """Focal cross-entropy (Lin et al. 2017) for class-imbalanced classification.
+
+        FL(pt) = -(1 - pt)^gamma * log(pt)
+
+        Easy examples (high pt) get down-weighted so gradient budget concentrates
+        on hard, misclassified samples. Combined with class weights this handles
+        both frequency imbalance (weights) and difficulty imbalance (focal term).
+
+        Using gamma=2 means a correctly-classified sample with pt=0.9 contributes
+        only (0.1)^2 = 1% of the gradient vs standard CE — hard samples dominate.
+        """
+        ce = F.cross_entropy(
+            logits.float(), labels.long(),
+            weight=weight, label_smoothing=label_smoothing, reduction="none",
+        )
+        # Detach pt to avoid double-differentiating through log(softmax)
+        pt = torch.exp(-ce.detach())
+        return ((1.0 - pt) ** gamma * ce).mean()
 
     # ──────────────────────────────────────────────────────────────────────
     # INFERENCE FORWARD PASS
@@ -225,12 +271,18 @@ class AffectDiffModule(pl.LightningModule):
         z_pooled = self._pool_features(z)
         logits = self.classifier(z_pooled)
         class_w = getattr(self, "class_weights", None)
-        loss_task = F.cross_entropy(
-            logits.float(),   # fp16 logits + fp32 weight → NaN in nll_loss_out_frame; cast prevents it
-            labels.long(),
-            weight=class_w,
-            label_smoothing=self.hparams.label_smoothing,
-        )
+        if self.hparams.use_focal_loss:
+            loss_task = self._focal_cross_entropy(
+                logits, labels, gamma=self.hparams.focal_gamma,
+                weight=class_w, label_smoothing=self.hparams.label_smoothing,
+            )
+        else:
+            loss_task = F.cross_entropy(
+                logits.float(),
+                labels.long(),
+                weight=class_w,
+                label_smoothing=self.hparams.label_smoothing,
+            )
 
         # ── Step 3: KL loss (Beta-VAE or Beta-TC-VAE) ────────────────────
         if self.hparams.use_beta_tc_vae:
@@ -495,13 +547,27 @@ class AffectDiffModule(pl.LightningModule):
     # ──────────────────────────────────────────────────────────────────────
 
     def configure_optimizers(self):
+        from torch.optim.lr_scheduler import LinearLR, CosineAnnealingLR, SequentialLR
+
         optimizer = AdamW(
             self.parameters(),
             lr=self.hparams.lr,
             weight_decay=self.hparams.weight_decay,
         )
-        scheduler = CosineAnnealingLR(
-            optimizer, T_max=self.hparams.epochs,
+
+        # Linear warmup for first 5 epochs (or 10% of training, whichever is larger)
+        # prevents the large random-init gradients from overshooting in epoch 1.
+        warmup_epochs = max(5, self.hparams.epochs // 10)
+        main_epochs = max(1, self.hparams.epochs - warmup_epochs)
+
+        warmup = LinearLR(
+            optimizer, start_factor=0.1, end_factor=1.0, total_iters=warmup_epochs
+        )
+        cosine = CosineAnnealingLR(
+            optimizer, T_max=main_epochs, eta_min=self.hparams.lr * 0.01
+        )
+        scheduler = SequentialLR(
+            optimizer, schedulers=[warmup, cosine], milestones=[warmup_epochs]
         )
         return {
             "optimizer": optimizer,

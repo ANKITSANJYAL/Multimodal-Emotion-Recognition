@@ -50,41 +50,44 @@ DEFAULTS: Dict[str, Any] = {
     # Data
     "batch_size": 64,
     "num_workers": 2,
-    # Model dims
+    # Model dims — halved from 512/256 to prevent overfitting on 1956 training samples
     "text_dim": 300,
     "audio_dim": 74,
     "video_dim": 35,
-    "hidden_dim": 512,
-    "latent_dim": 256,
+    "hidden_dim": 256,
+    "latent_dim": 128,
     "num_classes": 6,
     # Encoder / fusion / DAG
     "encoder_type": "legacy",
     "fusion_type": "concat",   # ablations: concat = crossmodal accuracy, ~2× faster to converge
-    "num_bottleneck_tokens": 50,
-    "num_cross_attn_layers": 2,
-    "num_self_attn_layers": 2,
+    "num_bottleneck_tokens": 20,
+    "num_cross_attn_layers": 1,
+    "num_self_attn_layers": 1,
     "dag_method": "notears",
     # Diffusion
     "diffusion_steps": 1000,
     "ddim_steps": 50,
     # Loss weights
-    "beta_kl": 0.1,           # was 0.5 — lighter KL so task gradient dominates
-    "lambda_diff": 0.1,       # if diffusion re-enabled, keep it light (ablations: 0.1 is best)
+    "beta_kl": 0.1,
+    "lambda_diff": 0.1,
     "lambda_causal": 0.05,
     "lambda_recon": 0.5,
     "cfg_scale": 3.0,
     "ema_decay": 0.999,
-    "label_smoothing": 0.1,
-    "free_bits": 0.0,         # 0 = no floor; with beta_kl=0.1 and cyclical annealing, no collapse
+    "label_smoothing": 0.05,  # was 0.1 — lighter smoothing (class weights already handle balance)
+    "free_bits": 0.0,
+    # Focal loss — down-weights easy samples so gradient focuses on hard misclassified ones
+    "use_focal_loss": True,
+    "focal_gamma": 2.0,
     # Ablation toggles — start simple; reconstruction caused recon=inf, diffusion adds noise
     "use_reconstruction": False,
     "use_diffusion": False,
     "use_causal_graph": True,
     "use_augmentation": True,
     "use_beta_tc_vae": False,
-    # Optimizer
-    "lr": 3e-4,
-    "weight_decay": 1e-5,
+    # Optimizer — higher LR is fine because warmup is now built into configure_optimizers
+    "lr": 5e-4,
+    "weight_decay": 1e-4,     # was 1e-5 — stronger L2 for small dataset
     "epochs": 100,
     "patience": 20,
     # Trainer
@@ -315,6 +318,8 @@ def run_experiment(cfg: Dict[str, Any]) -> Dict[str, float]:
         use_causal_graph=cfg["use_causal_graph"],
         use_augmentation=cfg["use_augmentation"],
         use_beta_tc_vae=cfg["use_beta_tc_vae"],
+        use_focal_loss=cfg.get("use_focal_loss", True),
+        focal_gamma=cfg.get("focal_gamma", 2.0),
         lr=cfg["lr"],
         weight_decay=cfg["weight_decay"],
         epochs=cfg["epochs"],
@@ -459,10 +464,13 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--free_bits",        type=float, default=DEFAULTS["free_bits"])
 
     # Ablation toggles
-    p.add_argument("--no_diffusion",     action="store_true")
-    p.add_argument("--no_causal",        action="store_true")
-    p.add_argument("--no_reconstruction",action="store_true")
-    p.add_argument("--no_augmentation",  action="store_true")
+    p.add_argument("--no_diffusion",      action="store_true")
+    p.add_argument("--no_causal",         action="store_true")
+    p.add_argument("--no_reconstruction", action="store_true")
+    p.add_argument("--no_augmentation",   action="store_true")
+    p.add_argument("--no_focal_loss",     action="store_true",
+                   help="Disable focal loss (use standard cross-entropy)")
+    p.add_argument("--focal_gamma",       type=float, default=DEFAULTS["focal_gamma"])
 
     # Training
     p.add_argument("--epochs",         type=int,   default=DEFAULTS["epochs"])
@@ -506,6 +514,8 @@ def main() -> None:
         "use_causal_graph":  not args.no_causal,
         "use_reconstruction":not args.no_reconstruction,
         "use_augmentation":  not args.no_augmentation,
+        "use_focal_loss":    not args.no_focal_loss,
+        "focal_gamma":       args.focal_gamma,
         "epochs":            args.epochs,
         "patience":          args.patience,
         "lr":                args.lr,
