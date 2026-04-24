@@ -1,56 +1,98 @@
 # ==========================================
 # Affect-Diff: CVPR 2026 Configuration
+# S+ Tier — All values wired to code
 # ==========================================
 
 # Global Settings
-experiment_name: "AffectDiff_Baseline_Joint_Training"
+experiment_name: "AffectDiff_S_Plus_CVPR2026"
 seed: 42
 
 # ------------------------------------------
 # Data Configuration
 # ------------------------------------------
 data:
-  data_dir: "data"                     # Raw CMU-MOSEI .csd files location (matches workspace structure)
-  cache_dir: "data/cache"              # Where the pre-aligned PyTorch tensors go
-  batch_size: 64                       # Maximize this based on your GPU VRAM
-  num_workers: 8                       # Keep GPUs fed with data
-  seq_len: 50                          # Standard temporal padding for MOSEI
+  data_dir: "data"
+  cache_dir: "data/cache"          # cache file is mosei_aligned_seq50_v2.pt (v2 = repaired alignment + label fix)
+  batch_size: 64
+  num_workers: 8
+  seq_len: 50
 
 # ------------------------------------------
 # Model Architecture & Bottleneck
 # ------------------------------------------
 model:
-  num_classes: 6                       # MOSEI emotions (Happy, Sad, Angry, Fear, Disgust, Surprise)
-  text_dim: 300                        # GloVe embeddings (or 768 if you swap to RoBERTa later)
-  audio_dim: 74                        # COVAREP acoustic features
-  video_dim: 35                       # VisualFacet42 facial action units (already correct)
-  hidden_dim: 512                      # Intermediate TCN projection size
-  latent_dim: 256                      # The size of our Shared Disentangled Affective Space
-  beta_kl: 5.0                         # Pressure on the Total Correlation / Disentanglement
-  lambda_diff: 1.0                     # Weight of the Diffusion Generative Loss vs Classification
-  lambda_causal: 0.1                   # Sparsity penalty for the Causal Attention Graph
-  cfg_scale: 3.0                       # Classifier-Free Guidance scale for counterfactual generation
+  num_classes: 6                        # MOSEI: Happy, Sad, Angry, Fear, Disgust, Surprise
+  text_dim: 300                         # GloVe (legacy) or 768 (RoBERTa)
+  audio_dim: 74                         # COVAREP (legacy) or 768 (HuBERT)
+  video_dim: 35                         # FAU (legacy) or 768 (CLIP ViT)
+  hidden_dim: 512                       # Shared encoder output dimension
+  latent_dim: 256                       # Disentangled affective latent space
+
+  # Loss weights
+  beta_kl: 0.5                          # β-VAE disentanglement (was 5.0 — caused KL domination)
+  lambda_diff: 0.5                      # Diffusion prior loss weight (halved to let task lead)
+  lambda_causal: 0.05                   # Causal graph sparsity/acyclicity weight
+  lambda_recon: 0.5                     # Reconstruction loss weight
+  cfg_scale: 3.0                        # Training CFG scale
+  ema_decay: 0.999                      # EMA decay for UNet shadow weights
+
+  # Encoder backbone selection
+  encoder_type: "legacy"                # "legacy" (GloVe/COVAREP/FAU) or "foundation" (RoBERTa/HuBERT/CLIP)
+  text_backbone: "roberta-base"
+  audio_backbone: "facebook/hubert-base-ls960"
+  video_backbone: "openai/clip-vit-base-patch16"
+  freeze_backbones: true
+
+  # Fusion method
+  fusion_type: "crossmodal"             # "concat" (legacy) or "crossmodal" (Perceiver-style)
+  num_bottleneck_tokens: 50             # Number of learned bottleneck tokens
+  num_cross_attn_layers: 2
+  num_self_attn_layers: 2
+
+  # DAG learning
+  dag_method: "notears"                 # "gumbel" or "notears"
+
+  # Component toggles for ablation studies
+  use_reconstruction: true              # VAE reconstruction decoder
+  use_diffusion: true                   # DDPM/DDIM generative prior
+  use_causal_graph: true                # Causal attention graph
+  use_augmentation: true                # Modality dropout + noise augmentation
+  use_beta_tc_vae: false                # Full TC decomposition (vs simple β-KL)
+
+  # Regularization (tunable via ablation sweep)
+  label_smoothing: 0.1                  # Cross-entropy label smoothing
+  free_bits: 0.25                       # KL free bits per dimension (was 2.0 — caused zero KL gradient)
 
 # ------------------------------------------
 # Diffusion Generative Prior
 # ------------------------------------------
 diffusion:
-  steps: 1000                          # Standard DDPM forward/reverse steps
-  schedule: "cosine"                   # Preserves continuous affective latents better than linear
+  steps: 1000                           # DDPM forward/reverse steps
+  schedule: "cosine"                    # Noise schedule type
+  sampler: "ddim"                       # "ddpm" or "ddim"
+  ddim_steps: 50                        # DDIM inference steps
+  ddim_eta: 0.0                         # DDIM stochasticity (0 = deterministic)
 
 # ------------------------------------------
 # Training & Optimization
 # ------------------------------------------
 trainer:
-  epochs: 100
-  lr: 1e-4                             # Base learning rate for AdamW
-  weight_decay: 1e-4                   # L2 regularization
-  devices: 2                           # Use 2 GPUs for DDP
-  precision: "16-mixed"                # Automatic Mixed Precision for faster A100/H100 training
+  epochs: 150
+  lr: 3e-4                              # AdamW base learning rate (was 1e-4)
+  weight_decay: 1e-5                    # L2 regularization (lighter)
+  devices: 2                            # Number of GPUs
+  precision: "16-mixed"                 # AMP precision
+  gradient_clip_val: 1.0
+  gradient_clip_algorithm: "norm"
+  patience: 30                          # Early stopping patience
+  log_every_n_steps: 5
 
 # ------------------------------------------
 # Evaluation & Inference
 # ------------------------------------------
 eval:
-  checkpoint_path: "checkpoints/best.ckpt" # Path used when running eval.py
-  dissonance_threshold: 0.4            # Threshold for flagging "hidden emotions" vs text
+  checkpoint_path: "checkpoints/best.ckpt"
+  dissonance_threshold: 0.4
+  cfg_scale: 4.0                        # Inference CFG scale
+  use_ddim: true
+  ddim_steps: 50

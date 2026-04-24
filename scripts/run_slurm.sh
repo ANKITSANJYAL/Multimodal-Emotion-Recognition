@@ -1,15 +1,20 @@
 #!/bin/bash
-# SLURM run script for cluster execution
-# Example usage: sbatch run_slurm.sh
+# SLURM run script for Affect-Diff cluster training
+# Usage: sbatch scripts/run_slurm.sh
 
 #SBATCH --job-name=affect_diff
 #SBATCH --output=logs/%x_%j.out
 #SBATCH --error=logs/%x_%j.err
-#SBATCH --gpus=1
-#SBATCH --time=24:00:00
-#SBATCH --mem=32G
-#SBATCH --cpus-per-task=8
+#SBATCH --gpus=2
+#SBATCH --time=48:00:00
+#SBATCH --mem=64G
+#SBATCH --cpus-per-task=16
 
-module load cuda/11.3
+module load cuda/11.8
 source ~/envs/affect_diff/bin/activate
-python modules/affect_diff_module.py --config configs/config.yaml
+
+# Ensure logs directory exists
+mkdir -p logs
+
+# Run training with Hydra config
+python train.py

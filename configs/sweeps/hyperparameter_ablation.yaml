@@ -1,0 +1,51 @@
+# ============================================================
+# Hyperparameter Sensitivity Ablation — Affect-Diff (CVPR 2026)
+#
+# Principle: One factor at a time (OFAT).
+# Each group varies ONE hyperparameter while keeping the rest
+# at the "default" setting (our best guess from initial tuning).
+#
+# Default baseline (v3 — after stop-gradient & free-bits fix):
+#   beta_kl=0.5, lambda_diff=0.5, lambda_causal=0.05,
+#   label_smoothing=0.1, free_bits=0.25
+# ============================================================
+
+# ── Group 1: beta_kl (KL disentanglement weight) ─────────────
+# Controls posterior vs prior matching. Too high → posterior collapse / KL domination.
+# Too low → entangled latent space, poor generation.
+beta_kl:
+  parameter: model.beta_kl
+  values: [0.01, 0.1, 0.5, 1.0, 5.0]
+  default: 0.5
+
+# ── Group 2: lambda_diff (Diffusion prior weight) ────────────
+# Weight on the diffusion MSE loss. Now with stop-gradient, this only
+# controls how hard the UNet trains — it no longer corrupts the encoder.
+lambda_diff:
+  parameter: model.lambda_diff
+  values: [0.1, 0.5, 1.0, 2.0]
+  default: 0.5
+
+# ── Group 3: lambda_causal (Causal DAG penalty weight) ───────
+# NOTEARS acyclicity + sparsity penalty. Too high → trivial graph (all zeros).
+# Too low → cycles permitted, causal reasoning degrades.
+lambda_causal:
+  parameter: model.lambda_causal
+  values: [0.01, 0.05, 0.1, 0.5]
+  default: 0.05
+
+# ── Group 4: label_smoothing (Cross-entropy regularization) ──
+# Prevents overconfident predictions. Standard range 0-0.2.
+label_smoothing:
+  parameter: model.label_smoothing
+  values: [0.0, 0.05, 0.1, 0.2]
+  default: 0.1
+
+# ── Group 5: free_bits (KL free bits per dimension) ──────────
+# Prevents posterior collapse (Kingma et al. 2016).
+# 0 = standard KL, higher = more information forced through the bottleneck.
+# Default reduced from 2.0 → 0.25 so KL gradient is non-zero.
+free_bits:
+  parameter: model.free_bits
+  values: [0.0, 0.1, 0.25, 0.5, 1.0]
+  default: 0.25

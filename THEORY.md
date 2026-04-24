@@ -421,8 +421,8 @@ Multimodal Input x = (x^T, x^A, x^V)
          |
          | Causal Graph A over {T, A, V}
          | (Gumbel-Softmax + L1 sparsity)
-         ▼                                                 
-  Sparse DAG  ← Proof VI                   
+         ▼
+  Sparse DAG  ← Proof VI
          |
          | CFG Sampling: z_CF ~ p̃_θ(z|y, x\m)
          |

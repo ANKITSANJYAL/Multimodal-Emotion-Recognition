@@ -1,0 +1,59 @@
+# ============================================================
+# Component Ablation — Affect-Diff (CVPR 2026)
+#
+# Table 1 in the paper: "Contribution of Each Component"
+# Each run removes exactly one component from the full model.
+# ============================================================
+
+experiments:
+  # ── Full model (baseline) ───────────────────────────────────
+  - name: "Full_Model"
+    overrides: {}
+
+  # ── Remove diffusion prior ─────────────────────────────────
+  - name: "No_Diffusion"
+    overrides:
+      model.use_diffusion: false
+
+  # ── Remove causal graph ────────────────────────────────────
+  - name: "No_Causal"
+    overrides:
+      model.use_causal_graph: false
+
+  # ── Remove reconstruction decoder ─────────────────────────
+  - name: "No_Reconstruction"
+    overrides:
+      model.use_reconstruction: false
+
+  # ── Remove augmentation ────────────────────────────────────
+  - name: "No_Augmentation"
+    overrides:
+      model.use_augmentation: false
+
+  # ── Classifier only (no VAE auxiliary losses) ──────────────
+  - name: "Classifier_Only"
+    overrides:
+      model.use_diffusion: false
+      model.use_causal_graph: false
+      model.use_reconstruction: false
+      model.use_augmentation: false
+      model.beta_kl: 0.0
+      model.lambda_diff: 0.0
+      model.lambda_causal: 0.0
+      model.lambda_recon: 0.0
+
+  # ── Concat fusion (vs CrossModal) ──────────────────────────
+  - name: "Concat_Fusion"
+    overrides:
+      model.fusion_type: "concat"
+
+  # ── Gumbel DAG (vs NOTEARS) ────────────────────────────────
+  - name: "Gumbel_DAG"
+    overrides:
+      model.dag_method: "gumbel"
+
+  # ── Beta-TC-VAE (vs standard β-VAE KL) ────────────────────
+  - name: "Beta_TC_VAE"
+    overrides:
+      model.use_beta_tc_vae: true
+      data.batch_size: 32  # TC pairwise computation is memory-heavy
