@@ -49,6 +49,7 @@ class LatentBottleneck(nn.Module):
         latent_dim: int = 256,
         encoder_type: Literal["legacy", "foundation"] = "legacy",
         encoder_dropout: float = 0.2,
+        encoder_layers: int = 3,
         text_backbone: str = "roberta-base",
         audio_backbone: str = "facebook/hubert-base-ls960",
         video_backbone: str = "openai/clip-vit-base-patch16",

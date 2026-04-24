@@ -54,7 +54,7 @@ DEFAULTS: Dict[str, Any] = {
     "text_dim": 300,
     "audio_dim": 74,
     "video_dim": 35,
-    "hidden_dim": 256,
+    "hidden_dim": 128,
     "latent_dim": 128,
     "num_classes": 6,
     # Encoder / fusion / DAG
