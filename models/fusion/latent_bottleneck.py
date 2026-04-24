@@ -48,6 +48,7 @@ class LatentBottleneck(nn.Module):
         hidden_dim: int = 512,
         latent_dim: int = 256,
         encoder_type: Literal["legacy", "foundation"] = "legacy",
+        encoder_dropout: float = 0.2,
         text_backbone: str = "roberta-base",
         audio_backbone: str = "facebook/hubert-base-ls960",
         video_backbone: str = "openai/clip-vit-base-patch16",
@@ -86,10 +87,10 @@ class LatentBottleneck(nn.Module):
                 fallback_input_dim=video_dim,
             )
         else:
-            logger.info("Using legacy encoders (Transformer/Conv1d)")
-            self.text_enc = TextEncoder(input_dim=text_dim, hidden_dim=hidden_dim)
-            self.audio_enc = AudioEncoder(input_dim=audio_dim, hidden_dim=hidden_dim)
-            self.video_enc = VideoEncoder(input_dim=video_dim, hidden_dim=hidden_dim)
+            logger.info("Using legacy encoders (Transformer/Conv1d), dropout=%.2f", encoder_dropout)
+            self.text_enc = TextEncoder(input_dim=text_dim, hidden_dim=hidden_dim, dropout=encoder_dropout)
+            self.audio_enc = AudioEncoder(input_dim=audio_dim, hidden_dim=hidden_dim, dropout=encoder_dropout)
+            self.video_enc = VideoEncoder(input_dim=video_dim, hidden_dim=hidden_dim, dropout=encoder_dropout)
 
         # ── 2. Causal Graph — on unimodal reps BEFORE fusion ─────────────
         self.causal_graph = CausalAttentionGraph(

@@ -50,6 +50,7 @@ class AffectDiffModule(pl.LightningModule):
         num_classes: int = 6,
         # ── Encoder / Fusion / DAG config ─────────────────────────────────
         encoder_type: str = "legacy",
+        encoder_dropout: float = 0.2,
         text_backbone: str = "roberta-base",
         audio_backbone: str = "facebook/hubert-base-ls960",
         video_backbone: str = "openai/clip-vit-base-patch16",
@@ -98,6 +99,7 @@ class AffectDiffModule(pl.LightningModule):
             hidden_dim=hidden_dim,
             latent_dim=latent_dim,
             encoder_type=encoder_type,
+            encoder_dropout=encoder_dropout,
             text_backbone=text_backbone,
             audio_backbone=audio_backbone,
             video_backbone=video_backbone,
@@ -457,12 +459,13 @@ class AffectDiffModule(pl.LightningModule):
         dm = self.trainer.datamodule
         if dm is not None and hasattr(dm, "class_weights"):
             w = dm.class_weights.to(self.device)
-            # Cap: no class can have more than 5× the weight of the lightest class.
-            # Prevents aggressive inverse-frequency weights from driving the model to
-            # predict rare classes everywhere (observed: val_acc collapsed to 2.9%).
-            w = torch.clamp(w, max=w.min() * 5.0)
+            # Cap at 2× the lightest class weight. Higher caps cause rare-class gradient
+            # to dominate: with sqrt weights Fear=6.26× Happy, the model predicts Fear
+            # everywhere and val_acc drops below the always-Happy (66%) baseline.
+            # 2× gives the rare classes a gentle nudge without overriding the task signal.
+            w = torch.clamp(w, max=w.min() * 2.0)
             self.register_buffer("class_weights", w)
-            logger.info("Loaded class weights (capped at 5× min): %s", w.tolist())
+            logger.info("Loaded class weights (capped at 2× min): %s", w.tolist())
         else:
             logger.warning("No class_weights found on datamodule — using uniform weights.")
 

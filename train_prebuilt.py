@@ -76,9 +76,14 @@ DEFAULTS: Dict[str, Any] = {
     "ema_decay": 0.999,
     "label_smoothing": 0.05,  # was 0.1 — lighter smoothing (class weights already handle balance)
     "free_bits": 0.0,
-    # Focal loss — down-weights easy samples so gradient focuses on hard misclassified ones
-    "use_focal_loss": True,
+    # Focal loss: OFF. With only 33 Fear training samples, focal's per-sample gradient
+    # amplification (rare class gets 4× total gradient vs Happy) causes the model to
+    # overfit to rare-class features from training and tank val_acc below the 66% baseline.
+    # Focal loss needs millions of samples to work safely (it was designed for COCO detection).
+    "use_focal_loss": False,
     "focal_gamma": 2.0,
+    # Encoder dropout — 0.3 (slightly higher than default 0.2) to regularise on 1956 samples
+    "encoder_dropout": 0.3,
     # Ablation toggles — start simple; reconstruction caused recon=inf, diffusion adds noise
     "use_reconstruction": False,
     "use_diffusion": False,
@@ -294,6 +299,7 @@ def run_experiment(cfg: Dict[str, Any]) -> Dict[str, float]:
         latent_dim=cfg["latent_dim"],
         num_classes=cfg["num_classes"],
         encoder_type=cfg["encoder_type"],
+        encoder_dropout=cfg.get("encoder_dropout", 0.3),
         text_backbone="roberta-base",
         audio_backbone="facebook/hubert-base-ls960",
         video_backbone="openai/clip-vit-base-patch16",
@@ -452,8 +458,9 @@ def parse_args() -> argparse.Namespace:
                    choices=["concat", "crossmodal"])
     p.add_argument("--dag_method",    default=DEFAULTS["dag_method"],
                    choices=["notears", "gumbel"])
-    p.add_argument("--hidden_dim",    type=int, default=DEFAULTS["hidden_dim"])
-    p.add_argument("--latent_dim",    type=int, default=DEFAULTS["latent_dim"])
+    p.add_argument("--hidden_dim",      type=int,   default=DEFAULTS["hidden_dim"])
+    p.add_argument("--latent_dim",      type=int,   default=DEFAULTS["latent_dim"])
+    p.add_argument("--encoder_dropout", type=float, default=DEFAULTS["encoder_dropout"])
 
     # Loss weights
     p.add_argument("--beta_kl",          type=float, default=DEFAULTS["beta_kl"])
@@ -504,6 +511,7 @@ def main() -> None:
         "dag_method":        args.dag_method,
         "hidden_dim":        args.hidden_dim,
         "latent_dim":        args.latent_dim,
+        "encoder_dropout":   args.encoder_dropout,
         "beta_kl":           args.beta_kl,
         "lambda_diff":       args.lambda_diff,
         "lambda_causal":     args.lambda_causal,
