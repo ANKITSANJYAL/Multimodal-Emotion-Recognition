@@ -59,7 +59,7 @@ DEFAULTS: Dict[str, Any] = {
     "num_classes": 6,
     # Encoder / fusion / DAG
     "encoder_type": "legacy",
-    "fusion_type": "crossmodal",
+    "fusion_type": "concat",   # ablations: concat = crossmodal accuracy, ~2× faster to converge
     "num_bottleneck_tokens": 50,
     "num_cross_attn_layers": 2,
     "num_self_attn_layers": 2,
@@ -68,17 +68,17 @@ DEFAULTS: Dict[str, Any] = {
     "diffusion_steps": 1000,
     "ddim_steps": 50,
     # Loss weights
-    "beta_kl": 0.5,
-    "lambda_diff": 0.5,
+    "beta_kl": 0.1,           # was 0.5 — lighter KL so task gradient dominates
+    "lambda_diff": 0.1,       # if diffusion re-enabled, keep it light (ablations: 0.1 is best)
     "lambda_causal": 0.05,
     "lambda_recon": 0.5,
     "cfg_scale": 3.0,
     "ema_decay": 0.999,
     "label_smoothing": 0.1,
-    "free_bits": 0.25,
-    # Ablation toggles
-    "use_reconstruction": True,
-    "use_diffusion": True,
+    "free_bits": 0.0,         # 0 = no floor; with beta_kl=0.1 and cyclical annealing, no collapse
+    # Ablation toggles — start simple; reconstruction caused recon=inf, diffusion adds noise
+    "use_reconstruction": False,
+    "use_diffusion": False,
     "use_causal_graph": True,
     "use_augmentation": True,
     "use_beta_tc_vae": False,
@@ -214,22 +214,34 @@ class PrebuiltDataModule(pl.LightningDataModule):
 
         def _norm(d: dict) -> dict:
             d = {k: v.clone() for k, v in d.items()}
-            d["text"]   = (d["text"]   - t_mean) / t_std
-            d["audio"]  = (d["audio"]  - a_mean) / a_std
-            d["vision"] = (d["vision"] - v_mean) / v_std
+            # Clamp after normalization: the .pt file's nan_to_num replaces original +inf
+            # feature values with 3.4e38 (float32 max). After dividing by a small std,
+            # those survive as huge finite numbers. MSE against those causes recon=inf
+            # because (3.4e28)^2 overflows float32. Clamp to [-10, 10] neutralises them.
+            for key, mean, std in [("text", t_mean, t_std), ("audio", a_mean, a_std), ("vision", v_mean, v_std)]:
+                d[key] = torch.clamp(
+                    torch.nan_to_num((d[key] - mean) / std, nan=0.0, posinf=0.0, neginf=0.0),
+                    min=-10.0, max=10.0,
+                )
             return d
 
         self.train_dataset = _MoseiDataset(_norm(_slice(train_idx)))
         self.val_dataset   = _MoseiDataset(_norm(_slice(val_idx)))
         self.test_dataset  = _MoseiDataset(_norm(_slice(test_idx)))
 
-        # Inverse-frequency class weights — training split only (no leakage)
+        # Sqrt inverse-frequency class weights — normalised so minimum class weight = 1.0.
+        # Full inverse-frequency ({0:0.25, 3:9.9}) gave a 39x ratio between Happy and Fear,
+        # which drove the model to predict rare classes everywhere (val_acc dropped to 2.9%).
+        # Sqrt reduces the ratio to ~6x, still compensating for imbalance without overpowering
+        # the task gradient.
         labels = self.train_dataset.labels
         num_classes = int(labels.max().item()) + 1
         counts = torch.bincount(labels, minlength=num_classes).float()
-        self.class_weights = labels.shape[0] / (num_classes * counts.clamp(min=1))
+        inv_freq = labels.shape[0] / (num_classes * counts.clamp(min=1))
+        sqrt_w = inv_freq.sqrt()
+        self.class_weights = sqrt_w / sqrt_w.min()  # min class = 1.0
         logger.info(
-            "Class weights: %s",
+            "Class weights (sqrt, min-normalised): %s",
             {i: f"{w:.3f}" for i, w in enumerate(self.class_weights.tolist())},
         )
 

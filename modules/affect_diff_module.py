@@ -256,11 +256,16 @@ class AffectDiffModule(pl.LightningModule):
         if self.decoder is not None and self.hparams.use_reconstruction:
             z_for_decode = z_perm.permute(0, 2, 1)  # (B, L, d_z)
             x_hat_t, x_hat_a, x_hat_v = self.decoder(z_for_decode)
+            # Guard decoder outputs: fp16 can overflow to inf in the final linear layer.
+            # Also clamp reconstruction targets to [-10, 10] — the same range the
+            # datamodule's normalization is clamped to, preventing (3.4e28)^2 → inf MSE.
+            def _safe(t):
+                return torch.clamp(torch.nan_to_num(t.float(), nan=0.0, posinf=1.0, neginf=-1.0), -100, 100)
             loss_recon = MultimodalDecoder.compute_reconstruction_loss(
-                x_hat_t, x_hat_a, x_hat_v,
-                torch.nan_to_num(batch["text"]),
-                torch.nan_to_num(batch["audio"]),
-                torch.nan_to_num(batch["vision"]),
+                _safe(x_hat_t), _safe(x_hat_a), _safe(x_hat_v),
+                torch.clamp(torch.nan_to_num(batch["text"]),   -10, 10),
+                torch.clamp(torch.nan_to_num(batch["audio"]),  -10, 10),
+                torch.clamp(torch.nan_to_num(batch["vision"]), -10, 10),
             )
         else:
             loss_recon = torch.tensor(0.0, device=self.device)
@@ -297,15 +302,16 @@ class AffectDiffModule(pl.LightningModule):
             loss_diff = torch.tensor(0.0, device=self.device)
 
         # ── Step 7: Joint loss with curriculum warmup ─────────────────────
-        # Classification loss is always active (no warmup).
-        # KL ramps over 30 epochs (slowest) — prevents early posterior collapse.
-        # Reconstruction ramps over 20 epochs.
-        # Diffusion is DELAYED: starts at epoch 10, ramps to full by epoch 30.
-        #   Rationale: the encoder needs to learn a discriminative latent space
-        #   first; training diffusion on a random/collapsed z teaches it nothing
-        #   useful and wastes capacity.  The 10-epoch delay ensures the encoder
-        #   has converged past the initial noisy phase before diffusion engages.
-        gamma_kl   = min(1.0, (self.current_epoch + 1) / 30.0)
+        # KL: cyclical annealing (Fu et al. 2019) — restarts from 0 every 20 epochs.
+        #   Each cycle has a 10-epoch ramp ("open") then 10 epochs at full weight
+        #   ("closed"). This prevents posterior collapse: even if KL collapses in
+        #   one cycle, the next cycle's ramp-from-zero lets the encoder re-engage
+        #   with the task loss before KL regularization kicks in.
+        #   Linear warmup (previous) caused collapse because once KL=0, the ramp
+        #   saturated at 1.0 with no recovery mechanism.
+        cycle_length = 20
+        step_in_cycle = self.current_epoch % cycle_length
+        gamma_kl    = min(1.0, step_in_cycle / (cycle_length * 0.5))
         gamma_recon = min(1.0, (self.current_epoch + 1) / 20.0)
         gamma_diff  = min(1.0, max(0.0, (self.current_epoch - 9) / 20.0))
 
@@ -398,8 +404,13 @@ class AffectDiffModule(pl.LightningModule):
         """Pull class weights from the datamodule after setup() has run."""
         dm = self.trainer.datamodule
         if dm is not None and hasattr(dm, "class_weights"):
-            self.register_buffer("class_weights", dm.class_weights.to(self.device))
-            logger.info("Loaded class weights from datamodule: %s", dm.class_weights.tolist())
+            w = dm.class_weights.to(self.device)
+            # Cap: no class can have more than 5× the weight of the lightest class.
+            # Prevents aggressive inverse-frequency weights from driving the model to
+            # predict rare classes everywhere (observed: val_acc collapsed to 2.9%).
+            w = torch.clamp(w, max=w.min() * 5.0)
+            self.register_buffer("class_weights", w)
+            logger.info("Loaded class weights (capped at 5× min): %s", w.tolist())
         else:
             logger.warning("No class_weights found on datamodule — using uniform weights.")
 
