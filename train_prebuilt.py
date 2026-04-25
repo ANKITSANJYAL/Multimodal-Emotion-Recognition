@@ -55,10 +55,11 @@ DEFAULTS: Dict[str, Any] = {
     "audio_dim": 74,
     "video_dim": 35,
     "hidden_dim": 128,
-    "latent_dim": 128,
+    "latent_dim": 64,
     "num_classes": 6,
     # Encoder / fusion / DAG
     "encoder_type": "legacy",
+    "encoder_layers": 1,       # 1 Transformer layer per encoder — reduces params ~8M → ~750K
     "fusion_type": "concat",   # ablations: concat = crossmodal accuracy, ~2× faster to converge
     "num_bottleneck_tokens": 20,
     "num_cross_attn_layers": 1,
@@ -300,6 +301,7 @@ def run_experiment(cfg: Dict[str, Any]) -> Dict[str, float]:
         num_classes=cfg["num_classes"],
         encoder_type=cfg["encoder_type"],
         encoder_dropout=cfg.get("encoder_dropout", 0.3),
+        encoder_layers=cfg.get("encoder_layers", 1),
         text_backbone="roberta-base",
         audio_backbone="facebook/hubert-base-ls960",
         video_backbone="openai/clip-vit-base-patch16",
@@ -324,7 +326,7 @@ def run_experiment(cfg: Dict[str, Any]) -> Dict[str, float]:
         use_causal_graph=cfg["use_causal_graph"],
         use_augmentation=cfg["use_augmentation"],
         use_beta_tc_vae=cfg["use_beta_tc_vae"],
-        use_focal_loss=cfg.get("use_focal_loss", True),
+        use_focal_loss=cfg["use_focal_loss"],
         focal_gamma=cfg.get("focal_gamma", 2.0),
         lr=cfg["lr"],
         weight_decay=cfg["weight_decay"],
@@ -475,9 +477,10 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--no_causal",         action="store_true")
     p.add_argument("--no_reconstruction", action="store_true")
     p.add_argument("--no_augmentation",   action="store_true")
-    p.add_argument("--no_focal_loss",     action="store_true",
-                   help="Disable focal loss (use standard cross-entropy)")
+    p.add_argument("--use_focal_loss",    action="store_true",
+                   help="Enable focal loss (off by default — unsafe on tiny datasets)")
     p.add_argument("--focal_gamma",       type=float, default=DEFAULTS["focal_gamma"])
+    p.add_argument("--encoder_layers",    type=int,   default=DEFAULTS["encoder_layers"])
 
     # Training
     p.add_argument("--epochs",         type=int,   default=DEFAULTS["epochs"])
@@ -522,8 +525,9 @@ def main() -> None:
         "use_causal_graph":  not args.no_causal,
         "use_reconstruction":not args.no_reconstruction,
         "use_augmentation":  not args.no_augmentation,
-        "use_focal_loss":    not args.no_focal_loss,
+        "use_focal_loss":    args.use_focal_loss,
         "focal_gamma":       args.focal_gamma,
+        "encoder_layers":    args.encoder_layers,
         "epochs":            args.epochs,
         "patience":          args.patience,
         "lr":                args.lr,

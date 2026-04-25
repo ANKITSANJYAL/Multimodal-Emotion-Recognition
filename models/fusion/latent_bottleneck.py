@@ -88,17 +88,39 @@ class LatentBottleneck(nn.Module):
                 fallback_input_dim=video_dim,
             )
         else:
-            logger.info("Using legacy encoders (Transformer/Conv1d), dropout=%.2f", encoder_dropout)
-            self.text_enc = TextEncoder(input_dim=text_dim, hidden_dim=hidden_dim, dropout=encoder_dropout)
-            self.audio_enc = AudioEncoder(input_dim=audio_dim, hidden_dim=hidden_dim, dropout=encoder_dropout)
-            self.video_enc = VideoEncoder(input_dim=video_dim, hidden_dim=hidden_dim, dropout=encoder_dropout)
+            logger.info(
+                "Using legacy encoders (Transformer/Conv1d), dropout=%.2f, layers=%d",
+                encoder_dropout, encoder_layers,
+            )
+            self.text_enc = TextEncoder(
+                input_dim=text_dim, hidden_dim=hidden_dim,
+                dropout=encoder_dropout, num_layers=encoder_layers,
+            )
+            self.audio_enc = AudioEncoder(
+                input_dim=audio_dim, hidden_dim=hidden_dim,
+                dropout=encoder_dropout, num_layers=encoder_layers,
+            )
+            self.video_enc = VideoEncoder(
+                input_dim=video_dim, hidden_dim=hidden_dim,
+                dropout=encoder_dropout, num_layers=encoder_layers,
+            )
 
-        # ── 2. Causal Graph — on unimodal reps BEFORE fusion ─────────────
+        # ── 2. Modality Gate — per-sample T/A/V importance weights ───────
+        # Text → semantic polarity; Audio → arousal/intensity; Video (FAU) → noisy.
+        # Softmax × 3 preserves expected activation magnitude at init (equal gate = 1×).
+        self.modality_gate = nn.Sequential(
+            nn.Linear(hidden_dim * 3, hidden_dim // 2),
+            nn.GELU(),
+            nn.Dropout(0.1),
+            nn.Linear(hidden_dim // 2, 3),
+        )
+
+        # ── 3. Causal Graph — on gated unimodal reps BEFORE fusion ───────
         self.causal_graph = CausalAttentionGraph(
             latent_dim=hidden_dim, num_nodes=3, dag_method=dag_method,
         )
 
-        # ── 3. Multimodal Fusion ─────────────────────────────────────────
+        # ── 4. Multimodal Fusion ─────────────────────────────────────────
         if fusion_type == "crossmodal":
             logger.info("Using Perceiver-style cross-modal attention fusion")
             self.fusion_net = CrossModalAttentionFusion(
@@ -117,7 +139,7 @@ class LatentBottleneck(nn.Module):
                 nn.Linear(hidden_dim, hidden_dim),
             )
 
-        # ── 4. VAE projection heads ──────────────────────────────────────
+        # ── 5. VAE projection heads ──────────────────────────────────────
         self.fc_mu = nn.Linear(hidden_dim, latent_dim)
         self.fc_logvar = nn.Linear(hidden_dim, latent_dim)
 
@@ -140,6 +162,15 @@ class LatentBottleneck(nn.Module):
         t_feat = self.text_enc(text)    # (B, L, hidden_dim)
         a_feat = self.audio_enc(audio)  # (B, L, hidden_dim)
         v_feat = self.video_enc(video)  # (B, L, hidden_dim)
+
+        # Dynamic modality gating: scale each modality by its learned importance.
+        # Mean-pool to (B, H), concat → (B, 3H), softmax → gates (B, 3).
+        # Multiply by 3 so equal gates (0.333 each) give 1× scaling at init.
+        gate_in = torch.cat([t_feat.mean(1), a_feat.mean(1), v_feat.mean(1)], dim=-1)
+        gates = torch.softmax(self.modality_gate(gate_in), dim=-1)  # (B, 3)
+        t_feat = t_feat * (gates[:, 0] * 3).view(-1, 1, 1)
+        a_feat = a_feat * (gates[:, 1] * 3).view(-1, 1, 1)
+        v_feat = v_feat * (gates[:, 2] * 3).view(-1, 1, 1)
 
         if self.fusion_type == "crossmodal":
             hidden = self.fusion_net(t_feat, a_feat, v_feat)  # (B, L_out, hidden_dim)

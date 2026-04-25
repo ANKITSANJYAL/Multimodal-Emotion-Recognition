@@ -51,6 +51,7 @@ class AffectDiffModule(pl.LightningModule):
         # ── Encoder / Fusion / DAG config ─────────────────────────────────
         encoder_type: str = "legacy",
         encoder_dropout: float = 0.2,
+        encoder_layers: int = 1,
         text_backbone: str = "roberta-base",
         audio_backbone: str = "facebook/hubert-base-ls960",
         video_backbone: str = "openai/clip-vit-base-patch16",
@@ -100,6 +101,7 @@ class AffectDiffModule(pl.LightningModule):
             latent_dim=latent_dim,
             encoder_type=encoder_type,
             encoder_dropout=encoder_dropout,
+            encoder_layers=encoder_layers,
             text_backbone=text_backbone,
             audio_backbone=audio_backbone,
             video_backbone=video_backbone,
@@ -254,9 +256,11 @@ class AffectDiffModule(pl.LightningModule):
         # which made 10% of batches fully degenerate instead of teaching robustness.
         if stage == "train":
             B = text.shape[0]
-            text  = text  * (torch.rand(B, 1, 1, device=self.device) > 0.1).float()
-            audio = audio * (torch.rand(B, 1, 1, device=self.device) > 0.1).float()
-            video = video * (torch.rand(B, 1, 1, device=self.device) > 0.1).float()
+            # Asymmetric rates reflect signal quality: text (semantic) is most reliable,
+            # video (FAU) is noisiest — higher dropout teaches the model not to depend on it.
+            text  = text  * (torch.rand(B, 1, 1, device=self.device) > 0.05).float()
+            audio = audio * (torch.rand(B, 1, 1, device=self.device) > 0.10).float()
+            video = video * (torch.rand(B, 1, 1, device=self.device) > 0.20).float()
 
         # ── Step 1: Encode -> latent space ────────────────────────────────
         z_perm, mu, logvar, adj_matrix = self.bottleneck(text, audio, video)
