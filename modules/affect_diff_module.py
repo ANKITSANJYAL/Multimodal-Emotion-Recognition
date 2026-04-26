@@ -98,10 +98,10 @@ class AffectDiffModule(pl.LightningModule):
         # until the model beats random, giving the U-curve time to complete.
         try:
             from torchmetrics.classification import MulticlassAccuracy
-            self._bal_acc = nn.ModuleDict({
-                s: MulticlassAccuracy(num_classes=num_classes, average="macro")
-                for s in ("train", "val", "test")
-            })
+            # Cannot use nn.ModuleDict with key "train" — conflicts with nn.Module.train()
+            self._bal_train = MulticlassAccuracy(num_classes=num_classes, average="macro")
+            self._bal_val   = MulticlassAccuracy(num_classes=num_classes, average="macro")
+            self._bal_test  = MulticlassAccuracy(num_classes=num_classes, average="macro")
             self._use_bal_metric = True
         except ImportError:
             self._use_bal_metric = False
@@ -438,7 +438,8 @@ class AffectDiffModule(pl.LightningModule):
         self.log(f"{stage}_loss", loss_total, prog_bar=True, sync_dist=True)
         self.log(f"{stage}_acc", acc, prog_bar=True, sync_dist=True)
         if self._use_bal_metric:
-            bal = self._bal_acc[stage](preds, labels.long())
+            metric = {"train": self._bal_train, "val": self._bal_val, "test": self._bal_test}[stage]
+            bal = metric(preds, labels.long())
             self.log(
                 f"{stage}_bal_acc", bal,
                 prog_bar=(stage == "val"),
