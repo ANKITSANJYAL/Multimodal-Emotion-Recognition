@@ -92,6 +92,20 @@ class AffectDiffModule(pl.LightningModule):
         super().__init__()
         self.save_hyperparameters()
 
+        # Balanced accuracy (mean per-class recall).
+        # With balanced sampling, epoch-0 always-Happy gets val_acc=0.668 but
+        # val_bal_acc≈0.17 (1/6 random) — EarlyStopping on val_bal_acc won't fire
+        # until the model beats random, giving the U-curve time to complete.
+        try:
+            from torchmetrics.classification import MulticlassAccuracy
+            self._bal_acc = nn.ModuleDict({
+                s: MulticlassAccuracy(num_classes=num_classes, average="macro")
+                for s in ("train", "val", "test")
+            })
+            self._use_bal_metric = True
+        except ImportError:
+            self._use_bal_metric = False
+
         # ── 1. Multimodal Encoder + VAE Bottleneck + Causal Graph ─────────
         self.bottleneck = LatentBottleneck(
             text_dim=text_dim,
@@ -423,6 +437,13 @@ class AffectDiffModule(pl.LightningModule):
 
         self.log(f"{stage}_loss", loss_total, prog_bar=True, sync_dist=True)
         self.log(f"{stage}_acc", acc, prog_bar=True, sync_dist=True)
+        if self._use_bal_metric:
+            bal = self._bal_acc[stage](preds, labels.long())
+            self.log(
+                f"{stage}_bal_acc", bal,
+                prog_bar=(stage == "val"),
+                on_step=False, on_epoch=True, sync_dist=True,
+            )
         self.log(f"{stage}_loss_task", loss_task, sync_dist=True)
         self.log(f"{stage}_loss_kl", loss_kl, sync_dist=True)
         self.log(f"{stage}_loss_diff", loss_diff, sync_dist=True)

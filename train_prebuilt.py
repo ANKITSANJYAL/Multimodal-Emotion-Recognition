@@ -95,7 +95,7 @@ DEFAULTS: Dict[str, Any] = {
     "lr": 5e-4,
     "weight_decay": 1e-4,     # was 1e-5 — stronger L2 for small dataset
     "epochs": 100,
-    "patience": 20,
+    "patience": 35,   # longer: balanced sampling causes a U-curve before val improves
     # Trainer
     "precision": "16-mixed",
     "gradient_clip_val": 1.0,
@@ -297,6 +297,13 @@ def run_experiment(cfg: Dict[str, Any]) -> Dict[str, float]:
 
     exp_name = cfg["experiment_name"]
     logger.info("=== Starting experiment: %s ===", exp_name)
+    logger.info(
+        "Config: use_diffusion=%s  use_reconstruction=%s  use_causal_graph=%s  "
+        "hidden_dim=%d  latent_dim=%d  encoder_layers=%d  fusion=%s",
+        cfg["use_diffusion"], cfg["use_reconstruction"], cfg["use_causal_graph"],
+        cfg["hidden_dim"], cfg["latent_dim"], cfg.get("encoder_layers", "?"),
+        cfg["fusion_type"],
+    )
 
     # DataModule
     datamodule = PrebuiltDataModule(
@@ -371,16 +378,21 @@ def run_experiment(cfg: Dict[str, Any]) -> Dict[str, float]:
     ckpt_dir = os.path.join(cfg["ckpt_dir"], exp_name)
     os.makedirs(ckpt_dir, exist_ok=True)
 
+    # Monitor val_bal_acc (mean per-class recall) instead of val_acc.
+    # With balanced sampling: epoch-0 always-Happy gets val_acc=0.668 but val_bal_acc≈0.17.
+    # Monitoring val_acc causes early stopping at epoch 20 before the model improves;
+    # monitoring val_bal_acc lets training continue until all 6 classes are learned.
+    monitor_metric = "val_bal_acc"
     callbacks = [
         ModelCheckpoint(
             dirpath=ckpt_dir,
-            monitor="val_acc",
+            monitor=monitor_metric,
             mode="max",
             save_top_k=2,
-            filename="affect-diff-{epoch:02d}-{val_acc:.3f}",
+            filename="affect-diff-{epoch:02d}-{val_bal_acc:.3f}",
         ),
         EarlyStopping(
-            monitor="val_acc",
+            monitor=monitor_metric,
             patience=cfg["patience"],
             mode="max",
         ),
