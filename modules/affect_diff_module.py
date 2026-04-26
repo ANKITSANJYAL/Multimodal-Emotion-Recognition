@@ -465,19 +465,16 @@ class AffectDiffModule(pl.LightningModule):
     def on_fit_start(self) -> None:
         """Pull class weights from the datamodule after setup() has run."""
         dm = self.trainer.datamodule
-        if dm is not None and getattr(dm, "use_weighted_sampler", False):
-            # WeightedRandomSampler already balances class frequencies in each batch.
-            # Applying class weights on top would double-reweight rare classes, causing
-            # the same rare-class gradient explosion as before (val_acc → 2.9%).
-            # With balanced batches, uniform loss weights are correct.
-            logger.info("WeightedRandomSampler active — using uniform class weights in loss.")
-        elif dm is not None and hasattr(dm, "class_weights"):
+        if dm is not None and hasattr(dm, "class_weights") and dm.class_weights is not None:
             w = dm.class_weights.to(self.device)
+            # Cap at 2× the minimum weight. The sqrt sampler already overrepresents
+            # rare classes in each batch, so the loss weight provides a second gentle
+            # nudge — not a dominant force. Higher caps cause rare-class dominance.
             w = torch.clamp(w, max=w.min() * 2.0)
             self.register_buffer("class_weights", w)
-            logger.info("Loaded class weights (capped at 2× min): %s", w.tolist())
+            logger.info("Loaded class weights (capped 2× min): %s", w.tolist())
         else:
-            logger.warning("No class_weights found on datamodule — using uniform weights.")
+            logger.warning("No class_weights on datamodule — using uniform loss weights.")
 
     def training_step(self, batch: Dict[str, torch.Tensor], batch_idx: int) -> torch.Tensor:
         return self.shared_step(batch, batch_idx, stage="train")

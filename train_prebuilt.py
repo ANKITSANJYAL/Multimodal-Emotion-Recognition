@@ -238,19 +238,28 @@ class PrebuiltDataModule(pl.LightningDataModule):
         self.val_dataset   = _MoseiDataset(_norm(_slice(val_idx)))
         self.test_dataset  = _MoseiDataset(_norm(_slice(test_idx)))
 
-        # WeightedRandomSampler: per-sample probability = inverse class frequency.
-        # This ensures each mini-batch sees ~equal counts of all 6 classes — Fear and
-        # Disgust (~33 samples) appear as frequently as Happy (~1295) per step.
-        # Class-weight reweighting in the loss is NOT applied on top of this (that would
-        # double-count and bias toward rare classes again). The sampler alone is sufficient.
+        # WeightedRandomSampler with sqrt-balanced weights.
+        #
+        # WHY NOT 1/count (full balance): perfectly uniform batches (1/6 per class) train
+        # the model to predict each class ~17% of the time.  Val set is 66% Happy, so a
+        # uniform predictor gets val_acc ≈ 1/6 = 16.7% — exactly what happened.
+        #
+        # WHY sqrt(1/count): Happy is still 41% of each batch, Fear is ~6.5%.
+        # The model stays biased toward the majority class (good for val_acc) while rare
+        # classes get 3–4× more gradient than in the natural distribution (good for learning).
         labels = self.train_dataset.labels
         num_classes = int(labels.max().item()) + 1
         counts = torch.bincount(labels, minlength=num_classes).float()
-        self.sample_weights = (1.0 / counts.clamp(min=1))[labels]  # (N_train,)
+        sqrt_inv = 1.0 / counts.clamp(min=1).sqrt()
+        self.sample_weights = sqrt_inv[labels]          # (N_train,) for WeightedRandomSampler
         self.use_weighted_sampler = True
+
+        # Loss weights: also sqrt-normalized, min class = 1.0 (for on_fit_start to use)
+        self.class_weights = (sqrt_inv / sqrt_inv.min()).float()
         logger.info(
-            "WeightedRandomSampler: class counts %s → sample probs sum=%.3f",
-            counts.tolist(), self.sample_weights.sum().item(),
+            "WeightedRandomSampler (sqrt): class counts %s  class_weights %s",
+            [int(c) for c in counts.tolist()],
+            [f"{w:.2f}" for w in self.class_weights.tolist()],
         )
 
     def train_dataloader(self) -> DataLoader:
