@@ -163,15 +163,6 @@ class LatentBottleneck(nn.Module):
         a_feat = self.audio_enc(audio)  # (B, L, hidden_dim)
         v_feat = self.video_enc(video)  # (B, L, hidden_dim)
 
-        # Dynamic modality gating: scale each modality by its learned importance.
-        # Mean-pool to (B, H), concat → (B, 3H), softmax → gates (B, 3).
-        # Multiply by 3 so equal gates (0.333 each) give 1× scaling at init.
-        gate_in = torch.cat([t_feat.mean(1), a_feat.mean(1), v_feat.mean(1)], dim=-1)
-        gates = torch.softmax(self.modality_gate(gate_in), dim=-1)  # (B, 3)
-        t_feat = t_feat * (gates[:, 0] * 3).view(-1, 1, 1)
-        a_feat = a_feat * (gates[:, 1] * 3).view(-1, 1, 1)
-        v_feat = v_feat * (gates[:, 2] * 3).view(-1, 1, 1)
-
         if self.fusion_type == "crossmodal":
             hidden = self.fusion_net(t_feat, a_feat, v_feat)  # (B, L_out, hidden_dim)
         else:

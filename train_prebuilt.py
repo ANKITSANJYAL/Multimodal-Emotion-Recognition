@@ -55,11 +55,11 @@ DEFAULTS: Dict[str, Any] = {
     "audio_dim": 74,
     "video_dim": 35,
     "hidden_dim": 128,
-    "latent_dim": 64,
+    "latent_dim": 128,
     "num_classes": 6,
     # Encoder / fusion / DAG
     "encoder_type": "legacy",
-    "encoder_layers": 1,       # 1 Transformer layer per encoder — reduces params ~8M → ~750K
+    "encoder_layers": 2,
     "fusion_type": "concat",   # ablations: concat = crossmodal accuracy, ~2× faster to converge
     "num_bottleneck_tokens": 20,
     "num_cross_attn_layers": 1,
@@ -75,7 +75,7 @@ DEFAULTS: Dict[str, Any] = {
     "lambda_recon": 0.5,
     "cfg_scale": 3.0,
     "ema_decay": 0.999,
-    "label_smoothing": 0.05,  # was 0.1 — lighter smoothing (class weights already handle balance)
+    "label_smoothing": 0.1,
     "free_bits": 0.0,
     # Focal loss: OFF. With only 33 Fear training samples, focal's per-sample gradient
     # amplification (rare class gets 4× total gradient vs Happy) causes the model to
@@ -95,7 +95,7 @@ DEFAULTS: Dict[str, Any] = {
     "lr": 5e-4,
     "weight_decay": 1e-4,     # was 1e-5 — stronger L2 for small dataset
     "epochs": 100,
-    "patience": 20,
+    "patience": 25,
     # Trainer
     "precision": "16-mixed",
     "gradient_clip_val": 1.0,

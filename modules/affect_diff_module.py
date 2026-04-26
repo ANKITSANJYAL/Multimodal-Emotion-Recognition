@@ -270,11 +270,9 @@ class AffectDiffModule(pl.LightningModule):
         # which made 10% of batches fully degenerate instead of teaching robustness.
         if stage == "train":
             B = text.shape[0]
-            # Asymmetric rates reflect signal quality: text (semantic) is most reliable,
-            # video (FAU) is noisiest — higher dropout teaches the model not to depend on it.
-            text  = text  * (torch.rand(B, 1, 1, device=self.device) > 0.05).float()
-            audio = audio * (torch.rand(B, 1, 1, device=self.device) > 0.10).float()
-            video = video * (torch.rand(B, 1, 1, device=self.device) > 0.20).float()
+            text  = text  * (torch.rand(B, 1, 1, device=self.device) > 0.1).float()
+            audio = audio * (torch.rand(B, 1, 1, device=self.device) > 0.1).float()
+            video = video * (torch.rand(B, 1, 1, device=self.device) > 0.1).float()
 
         # ── Step 1: Encode -> latent space ────────────────────────────────
         z_perm, mu, logvar, adj_matrix = self.bottleneck(text, audio, video)
@@ -486,17 +484,11 @@ class AffectDiffModule(pl.LightningModule):
 
     def on_fit_start(self) -> None:
         """Pull class weights from the datamodule after setup() has run."""
-        dm = self.trainer.datamodule
-        if dm is not None and hasattr(dm, "class_weights") and dm.class_weights is not None:
-            w = dm.class_weights.to(self.device)
-            # Cap at 2× the minimum weight. The sqrt sampler already overrepresents
-            # rare classes in each batch, so the loss weight provides a second gentle
-            # nudge — not a dominant force. Higher caps cause rare-class dominance.
-            w = torch.clamp(w, max=w.min() * 2.0)
-            self.register_buffer("class_weights", w)
-            logger.info("Loaded class weights (capped 2× min): %s", w.tolist())
-        else:
-            logger.warning("No class_weights on datamodule — using uniform loss weights.")
+        # Using uniform class weights: any imbalance reweighting causes the model to
+        # predict non-Happy more often, which drops val_acc on the imbalanced val set
+        # below the epoch-0 baseline (0.668), triggering premature early stopping.
+        # The model will still learn from the natural class distribution.
+        logger.info("Using uniform class weights in loss (no rebalancing).")
 
     def training_step(self, batch: Dict[str, torch.Tensor], batch_idx: int) -> torch.Tensor:
         return self.shared_step(batch, batch_idx, stage="train")
