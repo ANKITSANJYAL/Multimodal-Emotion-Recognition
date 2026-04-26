@@ -314,17 +314,21 @@ class AffectDiffModule(pl.LightningModule):
         if self.decoder is not None and self.hparams.use_reconstruction:
             z_for_decode = z_perm.permute(0, 2, 1)  # (B, L, d_z)
             x_hat_t, x_hat_a, x_hat_v = self.decoder(z_for_decode)
-            # Guard decoder outputs: fp16 can overflow to inf in the final linear layer.
-            # Also clamp reconstruction targets to [-10, 10] — the same range the
-            # datamodule's normalization is clamped to, preventing (3.4e28)^2 → inf MSE.
-            def _safe(t):
-                return torch.clamp(torch.nan_to_num(t.float(), nan=0.0, posinf=1.0, neginf=-1.0), -100, 100)
-            loss_recon = MultimodalDecoder.compute_reconstruction_loss(
-                _safe(x_hat_t), _safe(x_hat_a), _safe(x_hat_v),
-                torch.clamp(torch.nan_to_num(batch["text"]),   -10, 10),
-                torch.clamp(torch.nan_to_num(batch["audio"]),  -10, 10),
-                torch.clamp(torch.nan_to_num(batch["vision"]), -10, 10),
-            )
+            t_tgt = torch.clamp(torch.nan_to_num(batch["text"]),   -10, 10)
+            # Crossmodal fusion with bottleneck tokens produces fewer tokens than the
+            # original seq_len (e.g. 20 vs 50). MSE between mismatched shapes crashes
+            # or silently broadcasts wrong values. Skip recon in that case.
+            if x_hat_t.shape[1] != t_tgt.shape[1]:
+                loss_recon = torch.tensor(0.0, device=self.device)
+            else:
+                def _safe(t):
+                    return torch.clamp(torch.nan_to_num(t.float(), nan=0.0, posinf=1.0, neginf=-1.0), -100, 100)
+                loss_recon = MultimodalDecoder.compute_reconstruction_loss(
+                    _safe(x_hat_t), _safe(x_hat_a), _safe(x_hat_v),
+                    t_tgt,
+                    torch.clamp(torch.nan_to_num(batch["audio"]),  -10, 10),
+                    torch.clamp(torch.nan_to_num(batch["vision"]), -10, 10),
+                )
         else:
             loss_recon = torch.tensor(0.0, device=self.device)
 
@@ -461,12 +465,14 @@ class AffectDiffModule(pl.LightningModule):
     def on_fit_start(self) -> None:
         """Pull class weights from the datamodule after setup() has run."""
         dm = self.trainer.datamodule
-        if dm is not None and hasattr(dm, "class_weights"):
+        if dm is not None and getattr(dm, "use_weighted_sampler", False):
+            # WeightedRandomSampler already balances class frequencies in each batch.
+            # Applying class weights on top would double-reweight rare classes, causing
+            # the same rare-class gradient explosion as before (val_acc → 2.9%).
+            # With balanced batches, uniform loss weights are correct.
+            logger.info("WeightedRandomSampler active — using uniform class weights in loss.")
+        elif dm is not None and hasattr(dm, "class_weights"):
             w = dm.class_weights.to(self.device)
-            # Cap at 2× the lightest class weight. Higher caps cause rare-class gradient
-            # to dominate: with sqrt weights Fear=6.26× Happy, the model predicts Fear
-            # everywhere and val_acc drops below the always-Happy (66%) baseline.
-            # 2× gives the rare classes a gentle nudge without overriding the task signal.
             w = torch.clamp(w, max=w.min() * 2.0)
             self.register_buffer("class_weights", w)
             logger.info("Loaded class weights (capped at 2× min): %s", w.tolist())

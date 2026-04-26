@@ -5,19 +5,44 @@
 
 ## Current Status
 
-| Run | val_acc | Problem |
-|-----|---------|---------|
-| Initial | 0.029 | 3 compounding bugs: 39× class weights, recon=inf, KL=0 |
+| Run | test_acc | Problem |
+|-----|----------|---------|
+| Initial | 0.029 | 3 bugs: 39× class weights, recon=inf, KL=0 |
 | After fixes | 0.666 | Always-Happy baseline (model not learning) |
-| Focal loss attempt | 0.535 | Focal + class weights amplified rare-class gradient 4× |
-| Latest | 0.582 | Overfitting: train=0.750 vs val=0.582 (16.8pt gap) |
+| Focal loss | 0.535 | Focal amplified rare-class gradient 4× |
+| Overfitting runs | 0.676–0.679 | Stale checkpoints + class imbalance wall |
+
+**Root cause of 0.676 plateau**: every run was loading a stale checkpoint from a previous session
+(`test_loss_diff=1.14` despite `use_diffusion=False` proves the old checkpoint was active).
+The model itself was reaching `val_acc=0.683–0.685` but testing against a different checkpoint.
 
 **Realistic ceiling with pre-extracted GloVe/COVAREP/FAU features: ~74–78%.**
 State-of-the-art papers on CMU-MOSEI with these exact features report ~76%.
 
 ---
 
-## What Was Just Changed (April 24 session)
+## What Was Just Changed (April 25 session — THIS IS THE IMPORTANT ONE)
+
+### 1. WeightedRandomSampler — biggest accuracy lever
+**Where:** `train_prebuilt.py` `PrebuiltDataModule.train_dataloader()`.
+**What:** Each training step now samples with probability ∝ `1/class_count`. Fear (33 samples) and Disgust (35) appear as frequently as Happy (1295) per batch.
+**Before:** 1 Fear sample seen per ~40 Happy samples → model never learns Fear.
+**After:** Each class sees ~equal gradient budget per step → model must learn all 6 classes.
+**Class weights in loss are now DISABLED** (when sampler is active) to avoid double-reweighting.
+
+### 2. Fixed stale checkpoint bug — tests were loading the WRONG model
+**Where:** `train_prebuilt.py` `run_experiment()`.
+**Before:** `ckpt_path="best"` scans the entire checkpoint directory and picks the highest `val_acc` checkpoint — from ANY previous run. If Run 1 saved `val_acc=0.70` with diffusion=True, Run 2 tests using that checkpoint even though Run 2 trained with diffusion=False.
+**After:** `trainer.checkpoint_callback.best_model_path` — only the best checkpoint from THIS run.
+**This explains** `test_loss_diff=1.14` despite `use_diffusion=False`: you were always testing the old model.
+
+### 3. Fixed crossmodal + reconstruction crash
+**Where:** `modules/affect_diff_module.py` reconstruction section.
+**What:** If crossmodal fusion outputs 20 tokens but decoder expects 50, skip reconstruction rather than crash.
+
+---
+
+## What Was Changed (April 24 session)
 
 ### 1. `encoder_layers=1` wired through the full chain
 **Where:** `train_prebuilt.py` DEFAULTS, `affect_diff_module.py`, `latent_bottleneck.py`, all three encoder constructors.

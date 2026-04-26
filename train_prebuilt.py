@@ -238,26 +238,31 @@ class PrebuiltDataModule(pl.LightningDataModule):
         self.val_dataset   = _MoseiDataset(_norm(_slice(val_idx)))
         self.test_dataset  = _MoseiDataset(_norm(_slice(test_idx)))
 
-        # Sqrt inverse-frequency class weights — normalised so minimum class weight = 1.0.
-        # Full inverse-frequency ({0:0.25, 3:9.9}) gave a 39x ratio between Happy and Fear,
-        # which drove the model to predict rare classes everywhere (val_acc dropped to 2.9%).
-        # Sqrt reduces the ratio to ~6x, still compensating for imbalance without overpowering
-        # the task gradient.
+        # WeightedRandomSampler: per-sample probability = inverse class frequency.
+        # This ensures each mini-batch sees ~equal counts of all 6 classes — Fear and
+        # Disgust (~33 samples) appear as frequently as Happy (~1295) per step.
+        # Class-weight reweighting in the loss is NOT applied on top of this (that would
+        # double-count and bias toward rare classes again). The sampler alone is sufficient.
         labels = self.train_dataset.labels
         num_classes = int(labels.max().item()) + 1
         counts = torch.bincount(labels, minlength=num_classes).float()
-        inv_freq = labels.shape[0] / (num_classes * counts.clamp(min=1))
-        sqrt_w = inv_freq.sqrt()
-        self.class_weights = sqrt_w / sqrt_w.min()  # min class = 1.0
+        self.sample_weights = (1.0 / counts.clamp(min=1))[labels]  # (N_train,)
+        self.use_weighted_sampler = True
         logger.info(
-            "Class weights (sqrt, min-normalised): %s",
-            {i: f"{w:.3f}" for i, w in enumerate(self.class_weights.tolist())},
+            "WeightedRandomSampler: class counts %s → sample probs sum=%.3f",
+            counts.tolist(), self.sample_weights.sum().item(),
         )
 
     def train_dataloader(self) -> DataLoader:
+        from torch.utils.data import WeightedRandomSampler
+        sampler = WeightedRandomSampler(
+            weights=self.sample_weights,
+            num_samples=len(self.train_dataset),
+            replacement=True,
+        )
         return DataLoader(
             self.train_dataset, batch_size=self.batch_size,
-            shuffle=True, num_workers=self.num_workers, pin_memory=True,
+            sampler=sampler, num_workers=self.num_workers, pin_memory=True,
         )
 
     def val_dataloader(self) -> DataLoader:
@@ -388,7 +393,11 @@ def run_experiment(cfg: Dict[str, Any]) -> Dict[str, float]:
     )
 
     trainer.fit(model, datamodule=datamodule)
-    results = trainer.test(model, datamodule=datamodule, ckpt_path="best")
+    # Use the specific best checkpoint from THIS run — not "best" which scans the
+    # entire checkpoint directory and can load a checkpoint from a previous run
+    # that had different hyperparameters (e.g. use_diffusion=True from a prior session).
+    best_ckpt = trainer.checkpoint_callback.best_model_path
+    results = trainer.test(model, datamodule=datamodule, ckpt_path=best_ckpt or None)
 
     test_metrics = results[0] if results else {}
     logger.info("=== Finished %s | test metrics: %s ===", exp_name, test_metrics)
