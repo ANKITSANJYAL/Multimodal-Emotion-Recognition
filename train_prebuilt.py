@@ -95,7 +95,7 @@ DEFAULTS: Dict[str, Any] = {
     "lr": 5e-4,
     "weight_decay": 1e-4,     # was 1e-5 — stronger L2 for small dataset
     "epochs": 100,
-    "patience": 25,
+    "patience": 35,
     # Trainer
     "precision": "16-mixed",
     "gradient_clip_val": 1.0,
@@ -375,13 +375,13 @@ def run_experiment(cfg: Dict[str, Any]) -> Dict[str, float]:
     callbacks = [
         ModelCheckpoint(
             dirpath=ckpt_dir,
-            monitor="val_acc",
+            monitor="val_bal_acc",
             mode="max",
             save_top_k=2,
-            filename="affect-diff-{epoch:02d}-{val_acc:.3f}",
+            filename="affect-diff-{epoch:02d}-{val_bal_acc:.3f}",
         ),
         EarlyStopping(
-            monitor="val_acc",
+            monitor="val_bal_acc",
             patience=cfg["patience"],
             mode="max",
         ),

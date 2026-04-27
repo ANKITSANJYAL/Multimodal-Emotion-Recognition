@@ -109,8 +109,11 @@ FULL_MODEL_CFG: Dict[str, Any] = {
     "label_smoothing": 0.1,
     "free_bits":       0.0,
     # Ablation toggles (all ON for full model)
-    "use_reconstruction": False,   # keep False until recon is stable
-    "use_diffusion":      False,   # keep False until diffusion is stable
+    # Note: diffusion and reconstruction remain off until proven stable.
+    # The meaningful "Full Model" components are: causal graph + VAE + augmentation.
+    # Turn diffusion/reconstruction on only for the specific ablations that test them.
+    "use_reconstruction": False,
+    "use_diffusion":      False,
     "use_causal_graph":   True,
     "use_augmentation":   True,
     "use_beta_tc_vae":    False,
@@ -126,7 +129,8 @@ FULL_MODEL_CFG: Dict[str, Any] = {
     "lr":           5e-4,
     "weight_decay": 1e-4,
     "epochs":       100,
-    "patience":     25,
+    # val_bal_acc converges slower than val_acc — needs more patience
+    "patience":     35,
     # Trainer
     "precision": "16-mixed",
     "gradient_clip_val": 1.0,
@@ -1008,10 +1012,10 @@ def run_experiment(
 
     callbacks = [
         ModelCheckpoint(
-            dirpath=ckpt_dir, monitor="val_acc", mode="max", save_top_k=1,
-            filename="best-{epoch:02d}-{val_acc:.3f}",
+            dirpath=ckpt_dir, monitor="val_bal_acc", mode="max", save_top_k=1,
+            filename="best-{epoch:02d}-{val_bal_acc:.3f}",
         ),
-        EarlyStopping(monitor="val_acc", patience=cfg["patience"], mode="max"),
+        EarlyStopping(monitor="val_bal_acc", patience=cfg["patience"], mode="max"),
         LearningRateMonitor(logging_interval="step"),
     ]
 
@@ -1320,6 +1324,175 @@ def generate_plots(results_path: str = RESULTS_JSON, out_dir: str = PLOTS_DIR) -
     print(f"Plots saved to {out_dir}/")
 
 
+def generate_paper_figures(results_path: str = RESULTS_JSON,
+                            out_dir: str = PLOTS_DIR) -> None:
+    """Generate the four core paper figures from whatever results exist so far.
+
+    Designed to produce useful output even from a partial run — missing
+    experiments are silently skipped so you can plot after each completed run.
+    """
+    try:
+        import matplotlib
+        matplotlib.use("Agg")
+        import matplotlib.pyplot as plt
+        import seaborn as sns  # type: ignore
+    except ImportError:
+        print("matplotlib/seaborn not available — skipping plots")
+        return
+
+    os.makedirs(out_dir, exist_ok=True)
+    data = load_results(results_path)
+    if not data:
+        print("No results yet.")
+        return
+
+    # ── Figure 1: Main ablation bar chart ─────────────────────────────────
+    # Define the preferred display order for the ablation table
+    arch_order = [
+        "Full_Model", "Classifier_Only",
+        "No_Causal_Graph", "No_NOTEARS", "No_Perceiver",
+        "No_VAE", "No_Reconstruction", "No_Diffusion",
+        "No_Stop_Gradient", "No_CFG", "No_Causal_Diffusion_Cond",
+        "Baseline_TFN", "Baseline_MulT", "Baseline_MISA",
+    ]
+    ordered = [n for n in arch_order if n in data]
+    if ordered:
+        f1s  = [data[n].get("rich_metrics", {}).get("macro_f1",    float("nan")) for n in ordered]
+        bals = [data[n].get("rich_metrics", {}).get("balanced_acc", float("nan")) for n in ordered]
+        accs = [data[n].get("test_metrics", {}).get("test_acc",    float("nan")) for n in ordered]
+
+        x  = np.arange(len(ordered))
+        w  = 0.27
+        colors = ["#2196F3", "#4CAF50", "#FF9800"]
+
+        fig, ax = plt.subplots(figsize=(max(10, len(ordered) * 0.8), 5))
+        bars1 = ax.bar(x - w, accs, w, label="Accuracy",      color=colors[0], alpha=0.85)
+        bars2 = ax.bar(x,     bals, w, label="Balanced Acc",  color=colors[1], alpha=0.85)
+        bars3 = ax.bar(x + w, f1s,  w, label="Macro F1",      color=colors[2], alpha=0.85)
+
+        # Highlight baselines
+        baseline_idxs = [i for i, n in enumerate(ordered) if n.startswith("Baseline_")]
+        for i in baseline_idxs:
+            ax.axvspan(i - 0.5, i + 0.5, alpha=0.06, color="gray")
+
+        # Annotate F1 bars
+        for rect, val in zip(bars3, f1s):
+            if val == val:
+                ax.text(rect.get_x() + rect.get_width() / 2, rect.get_height() + 0.005,
+                        f"{val:.3f}", ha="center", va="bottom", fontsize=7, rotation=0)
+
+        ax.set_xticks(x)
+        ax.set_xticklabels(ordered, rotation=40, ha="right", fontsize=9)
+        ax.set_ylim(0, 1.05)
+        ax.set_ylabel("Score")
+        ax.set_title("Ablation Study — Accuracy / Balanced Acc / Macro F1\n"
+                     "(gray = external baselines)", fontsize=11)
+        ax.legend(loc="upper right")
+        ax.grid(axis="y", alpha=0.25)
+        plt.tight_layout()
+        fig.savefig(os.path.join(out_dir, "fig1_ablation_main.png"), dpi=150)
+        plt.close(fig)
+        print("  saved fig1_ablation_main.png")
+
+    # ── Figure 2: Per-class F1 heatmap ────────────────────────────────────
+    hm_names = [n for n in arch_order if n in data]
+    if hm_names:
+        mat = np.array([
+            [data[n].get("rich_metrics", {}).get("per_class_f1", {}).get(c, float("nan"))
+             for c in CLASS_NAMES]
+            for n in hm_names
+        ], dtype=float)
+        mat_clean = np.nan_to_num(mat, nan=0.0)
+
+        fig, ax = plt.subplots(figsize=(9, max(4, len(hm_names) * 0.38)))
+        im = ax.imshow(mat_clean, aspect="auto", cmap="RdYlGn", vmin=0, vmax=1)
+        ax.set_xticks(range(len(CLASS_NAMES)))
+        ax.set_xticklabels(CLASS_NAMES, fontsize=10)
+        ax.set_yticks(range(len(hm_names)))
+        ax.set_yticklabels(hm_names, fontsize=9)
+        ax.set_title("Per-class F1 — Ablation Comparison", fontsize=11)
+        plt.colorbar(im, ax=ax, fraction=0.03)
+        for i in range(mat_clean.shape[0]):
+            for j in range(mat_clean.shape[1]):
+                v = mat_clean[i, j]
+                ax.text(j, i, f"{v:.2f}", ha="center", va="center",
+                        fontsize=7.5, color="black" if v < 0.65 else "white",
+                        fontweight="bold" if v > 0.5 else "normal")
+        plt.tight_layout()
+        fig.savefig(os.path.join(out_dir, "fig2_perclass_f1.png"), dpi=150)
+        plt.close(fig)
+        print("  saved fig2_perclass_f1.png")
+
+    # ── Figure 3: Robustness spider chart (Full_Model vs best baseline) ───
+    rob_candidates = [n for n in ["Full_Model", "Baseline_MulT", "Baseline_TFN"] if n in data]
+    rob_keys = ["missing_text", "missing_audio", "missing_vision",
+                "noise_0.5", "noise_1.0", "frame_mask_0.5"]
+    rob_labels = ["−Text", "−Audio", "−Vision", "Noise 0.5σ", "Noise 1.0σ", "Mask 50%"]
+
+    if rob_candidates:
+        angles = np.linspace(0, 2 * np.pi, len(rob_keys), endpoint=False).tolist()
+        angles += angles[:1]
+        fig, ax = plt.subplots(figsize=(6, 6), subplot_kw=dict(polar=True))
+        palette = ["#2196F3", "#FF5722", "#4CAF50"]
+        for name, color in zip(rob_candidates, palette):
+            rob = data[name].get("robustness", {})
+            vals = [rob.get(k, {}).get("macro_f1", 0.0) for k in rob_keys]
+            vals += vals[:1]
+            ax.plot(angles, vals, "o-", color=color, lw=1.8, label=name)
+            ax.fill(angles, vals, alpha=0.12, color=color)
+        ax.set_thetagrids(np.degrees(angles[:-1]), rob_labels, fontsize=9)
+        ax.set_ylim(0, max(0.6, ax.get_ylim()[1]))
+        ax.set_title("Robustness Profile (Macro F1)", fontsize=11, pad=20)
+        ax.legend(loc="upper right", bbox_to_anchor=(1.3, 1.1), fontsize=9)
+        plt.tight_layout()
+        fig.savefig(os.path.join(out_dir, "fig3_robustness.png"), dpi=150)
+        plt.close(fig)
+        print("  saved fig3_robustness.png")
+
+    # ── Figure 4: Confusion matrix for Full_Model ─────────────────────────
+    if "Full_Model" in data:
+        cm_data = data["Full_Model"].get("rich_metrics", {}).get("confusion_matrix", [])
+        if cm_data:
+            cm_arr  = np.array(cm_data, dtype=float)
+            row_sum = cm_arr.sum(axis=1, keepdims=True)
+            cm_norm = cm_arr / (row_sum + 1e-8)
+            fig, ax = plt.subplots(figsize=(7, 5.5))
+            sns.heatmap(cm_norm, annot=True, fmt=".2f", cmap="Blues",
+                        xticklabels=CLASS_NAMES, yticklabels=CLASS_NAMES,
+                        ax=ax, linewidths=0.5, annot_kws={"size": 10})
+            ax.set_xlabel("Predicted", fontsize=11)
+            ax.set_ylabel("True", fontsize=11)
+            ax.set_title("Confusion Matrix — Full Model (row-normalized)", fontsize=11)
+            plt.tight_layout()
+            fig.savefig(os.path.join(out_dir, "fig4_confusion.png"), dpi=150)
+            plt.close(fig)
+            print("  saved fig4_confusion.png")
+
+    # ── Figure 5: AUROC one-vs-rest bar ───────────────────────────────────
+    auroc_names = [n for n in arch_order if n in data and
+                   data[n].get("rich_metrics", {}).get("auroc", 0) > 0]
+    if auroc_names:
+        aurocs = [data[n]["rich_metrics"]["auroc"] for n in auroc_names]
+        fig, ax = plt.subplots(figsize=(max(8, len(auroc_names) * 0.7), 4))
+        colors = ["#1565C0" if not n.startswith("Baseline") else "#BF360C"
+                  for n in auroc_names]
+        ax.barh(auroc_names, aurocs, color=colors, alpha=0.8)
+        ax.axvline(0.5, ls="--", color="gray", label="Random (0.5)")
+        ax.set_xlabel("AUROC (macro one-vs-rest)")
+        ax.set_title("AUROC Comparison")
+        ax.set_xlim(0.4, 1.0)
+        ax.legend()
+        ax.grid(axis="x", alpha=0.3)
+        for i, v in enumerate(aurocs):
+            ax.text(v + 0.002, i, f"{v:.3f}", va="center", fontsize=9)
+        plt.tight_layout()
+        fig.savefig(os.path.join(out_dir, "fig5_auroc.png"), dpi=150)
+        plt.close(fig)
+        print("  saved fig5_auroc.png")
+
+    print(f"\nAll paper figures saved to {out_dir}/")
+
+
 # ──────────────────────────────────────────────────────────────────────────────
 # CLI
 # ──────────────────────────────────────────────────────────────────────────────
@@ -1337,10 +1510,12 @@ def parse_args() -> argparse.Namespace:
                    help="Run a predefined group of experiments")
     p.add_argument("--list",     action="store_true",
                    help="List all available experiment names and exit")
-    p.add_argument("--analyze",  action="store_true",
+    p.add_argument("--analyze",       action="store_true",
                    help="Print results table from saved JSON")
-    p.add_argument("--plot",     action="store_true",
+    p.add_argument("--plot",          action="store_true",
                    help="Generate all plots from saved JSON")
+    p.add_argument("--paper_figures", action="store_true",
+                   help="Generate the 5 camera-ready paper figures")
     p.add_argument("--no_skip",  action="store_true",
                    help="Re-run even if result already in JSON")
     p.add_argument("--no_robust", action="store_true",
@@ -1388,6 +1563,10 @@ def main() -> None:
 
     if args.plot:
         generate_plots(args.results, args.plots_dir)
+        return
+
+    if args.paper_figures:
+        generate_paper_figures(args.results, args.plots_dir)
         return
 
     # Build base config from FULL_MODEL_CFG + CLI overrides

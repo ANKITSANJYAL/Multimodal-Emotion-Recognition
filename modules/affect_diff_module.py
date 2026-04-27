@@ -499,12 +499,26 @@ class AffectDiffModule(pl.LightningModule):
     # ──────────────────────────────────────────────────────────────────────
 
     def on_fit_start(self) -> None:
-        """Pull class weights from the datamodule after setup() has run."""
-        # Using uniform class weights: any imbalance reweighting causes the model to
-        # predict non-Happy more often, which drops val_acc on the imbalanced val set
-        # below the epoch-0 baseline (0.668), triggering premature early stopping.
-        # The model will still learn from the natural class distribution.
-        logger.info("Using uniform class weights in loss (no rebalancing).")
+        """Pull class weights from the datamodule and wire them into the CE loss.
+
+        Previously this was a no-op (uniform weights) because enabling weights
+        dropped val_acc below the Happy-baseline, triggering premature early stopping.
+        That was a metric problem, not a weighting problem.  Now that early stopping
+        monitors val_bal_acc (mean per-class recall), class weights are safe to enable.
+
+        Cap at 8× to prevent the Fe/Disgust/Surprise gradient from dominating and
+        destabilizing fp16 training on the very first few steps.
+        """
+        dm = self.trainer.datamodule
+        if hasattr(dm, "class_weights") and dm.class_weights is not None:
+            raw = dm.class_weights.to(self.device)
+            self.class_weights = raw.clamp(max=8.0)
+            logger.info(
+                "Class weights (sqrt-inv, capped 8×): %s",
+                [f"{w:.2f}" for w in self.class_weights.tolist()],
+            )
+        else:
+            logger.info("No class weights available — using uniform.")
 
     def training_step(self, batch: Dict[str, torch.Tensor], batch_idx: int) -> torch.Tensor:
         return self.shared_step(batch, batch_idx, stage="train")
