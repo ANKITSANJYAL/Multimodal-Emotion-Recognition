@@ -85,6 +85,12 @@ class AffectDiffModule(pl.LightningModule):
         use_causal_graph: bool = True,
         use_augmentation: bool = True,
         use_beta_tc_vae: bool = False,
+        # ── Fine-grained ablation flags (new) ─────────────────────────────
+        use_vae: bool = True,                   # False → deterministic z=mu, KL=0
+        use_stop_gradient: bool = True,         # False → diffusion grads flow to encoder
+        use_cfg: bool = True,                   # False → no CFG null-token dropout
+        use_causal_diffusion_cond: bool = True, # False → UNet gets uniform causal weights
+        use_kl_warmup: bool = True,             # False → gamma_kl=1.0 from epoch 0
         # ── Focal loss ────────────────────────────────────────────────────
         use_focal_loss: bool = False,
         focal_gamma: float = 2.0,
@@ -283,6 +289,9 @@ class AffectDiffModule(pl.LightningModule):
         z_perm   = torch.nan_to_num(z_perm,   nan=0.0, posinf=10.0, neginf=-10.0)
         adj_matrix = torch.nan_to_num(adj_matrix, nan=0.0, posinf=1.0, neginf=0.0)
         z_perm = torch.clamp(z_perm, min=-10.0, max=10.0)
+        # Ablation: no VAE — use deterministic z = mu (skip reparameterization)
+        if not self.hparams.use_vae:
+            z_perm = torch.clamp(torch.nan_to_num(mu.permute(0, 2, 1)), -10.0, 10.0)
 
         # ── Step 2: Classification loss ───────────────────────────────────
         z = z_perm.permute(0, 2, 1)
@@ -303,7 +312,10 @@ class AffectDiffModule(pl.LightningModule):
             )
 
         # ── Step 3: KL loss (Beta-VAE or Beta-TC-VAE) ────────────────────
-        if self.hparams.use_beta_tc_vae:
+        if not self.hparams.use_vae:
+            # Deterministic encoder — no stochastic component, no KL term
+            loss_kl = torch.tensor(0.0, device=self.device)
+        elif self.hparams.use_beta_tc_vae:
             z_flat = z_perm.permute(0, 2, 1).reshape(-1, self.hparams.latent_dim)
             mu_flat = mu.reshape(-1, self.hparams.latent_dim)
             logvar_flat = logvar.reshape(-1, self.hparams.latent_dim)
@@ -356,19 +368,25 @@ class AffectDiffModule(pl.LightningModule):
             b = text.shape[0]
             t = torch.randint(0, self.diffusion.timesteps, (b,), device=self.device).long()
 
-            # CFG: 20% null token dropout
-            drop_mask = (torch.rand(b, device=self.device) < 0.2).long()
-            null_token = self.hparams.num_classes
-            labels_cond = labels.long() * (1 - drop_mask) + null_token * drop_mask
+            # Ablation: no CFG — always use real label, no null-token dropout
+            if self.hparams.use_cfg:
+                drop_mask = (torch.rand(b, device=self.device) < 0.2).long()
+                null_token = self.hparams.num_classes
+                labels_cond = labels.long() * (1 - drop_mask) + null_token * drop_mask
+            else:
+                labels_cond = labels.long()
 
-            # Causal influence weights (detached: UNet loss shouldn't push causal graph)
-            if self.hparams.use_causal_graph:
+            # Ablation: no causal conditioning — pass uniform weights to UNet
+            if self.hparams.use_causal_diffusion_cond and self.hparams.use_causal_graph:
                 causal_influence = torch.clamp(adj_matrix.sum(dim=1), min=0.0, max=5.0).detach()
             else:
                 causal_influence = torch.ones(b, 3, device=self.device)
 
+            # Ablation: no stop-gradient — let diffusion loss shape the encoder
+            z_for_diff = z_perm.detach() if self.hparams.use_stop_gradient else z_perm
+
             loss_diff = self.diffusion.p_losses(
-                x_start=z_perm.detach(), t=t,
+                x_start=z_for_diff, t=t,
                 label=labels_cond,
                 causal_weights=causal_influence,
             )
@@ -376,16 +394,14 @@ class AffectDiffModule(pl.LightningModule):
             loss_diff = torch.tensor(0.0, device=self.device)
 
         # ── Step 7: Joint loss with curriculum warmup ─────────────────────
-        # KL: cyclical annealing (Fu et al. 2019) — restarts from 0 every 20 epochs.
-        #   Each cycle has a 10-epoch ramp ("open") then 10 epochs at full weight
-        #   ("closed"). This prevents posterior collapse: even if KL collapses in
-        #   one cycle, the next cycle's ramp-from-zero lets the encoder re-engage
-        #   with the task loss before KL regularization kicks in.
-        #   Linear warmup (previous) caused collapse because once KL=0, the ramp
-        #   saturated at 1.0 with no recovery mechanism.
-        cycle_length = 20
-        step_in_cycle = self.current_epoch % cycle_length
-        gamma_kl    = min(1.0, step_in_cycle / (cycle_length * 0.5))
+        # KL: cyclical annealing (Fu et al. 2019) — restarts every 20 epochs.
+        # Ablation: use_kl_warmup=False → full KL weight from epoch 0.
+        if self.hparams.use_kl_warmup:
+            cycle_length = 20
+            step_in_cycle = self.current_epoch % cycle_length
+            gamma_kl = min(1.0, step_in_cycle / (cycle_length * 0.5))
+        else:
+            gamma_kl = 1.0
         gamma_recon = min(1.0, (self.current_epoch + 1) / 20.0)
         gamma_diff  = min(1.0, max(0.0, (self.current_epoch - 9) / 20.0))
 
@@ -496,8 +512,59 @@ class AffectDiffModule(pl.LightningModule):
     def validation_step(self, batch: Dict[str, torch.Tensor], batch_idx: int) -> torch.Tensor:
         return self.shared_step(batch, batch_idx, stage="val")
 
+    def on_test_epoch_start(self) -> None:
+        self._test_logits: list = []
+        self._test_targets: list = []
+
     def test_step(self, batch: Dict[str, torch.Tensor], batch_idx: int) -> torch.Tensor:
-        return self.shared_step(batch, batch_idx, stage="test")
+        loss = self.shared_step(batch, batch_idx, stage="test")
+        # Collect predictions for rich metrics (no extra forward; reuse from shared_step)
+        with torch.no_grad():
+            text  = torch.nan_to_num(batch["text"])
+            audio = torch.nan_to_num(batch["audio"])
+            video = torch.nan_to_num(batch["vision"])
+            logits = self(text, audio, video)
+            self._test_logits.append(logits.cpu())
+            self._test_targets.append(batch["labels"].cpu())
+        return loss
+
+    def on_test_epoch_end(self) -> None:
+        if not self._test_logits:
+            return
+        all_logits  = torch.cat(self._test_logits,  dim=0)  # (N, C)
+        all_targets = torch.cat(self._test_targets, dim=0)  # (N,)
+        preds = torch.argmax(all_logits, dim=1)
+        num_classes = self.hparams.num_classes
+        class_names = ["Happy", "Sad", "Angry", "Fear", "Disgust", "Surprise"][:num_classes]
+
+        try:
+            from torchmetrics.classification import (
+                MulticlassF1Score, MulticlassPrecision, MulticlassRecall,
+                MulticlassAUROC, MulticlassConfusionMatrix,
+            )
+            f1_mac = MulticlassF1Score(num_classes=num_classes, average="macro")(preds, all_targets).item()
+            f1_per = MulticlassF1Score(num_classes=num_classes, average="none")(preds, all_targets).tolist()
+            prec_per = MulticlassPrecision(num_classes=num_classes, average="none")(preds, all_targets).tolist()
+            rec_per  = MulticlassRecall(num_classes=num_classes, average="none")(preds, all_targets).tolist()
+            auroc    = MulticlassAUROC(num_classes=num_classes)(all_logits, all_targets.long()).item()
+            cm       = MulticlassConfusionMatrix(num_classes=num_classes)(preds, all_targets).tolist()
+        except Exception:
+            f1_mac, f1_per, prec_per, rec_per, auroc, cm = 0.0, [], [], [], 0.0, []
+
+        bal_acc = sum(rec_per) / len(rec_per) if rec_per else 0.0
+
+        self._rich_test_metrics: Dict[str, Any] = {
+            "macro_f1":        f1_mac,
+            "balanced_acc":    bal_acc,
+            "auroc":           auroc,
+            "per_class_f1":    dict(zip(class_names, f1_per)),
+            "per_class_prec":  dict(zip(class_names, prec_per)),
+            "per_class_rec":   dict(zip(class_names, rec_per)),
+            "confusion_matrix": cm,
+        }
+        self.log("test_macro_f1",    f1_mac,   sync_dist=True)
+        self.log("test_balanced_acc", bal_acc, sync_dist=True)
+        self.log("test_auroc",        auroc,   sync_dist=True)
 
     def on_train_batch_end(self, outputs: Any, batch: Any, batch_idx: int) -> None:
         """EMA update of UNet weights after every gradient step."""
