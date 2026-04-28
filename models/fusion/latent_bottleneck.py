@@ -59,12 +59,14 @@ class LatentBottleneck(nn.Module):
         num_cross_attn_layers: int = 2,
         num_self_attn_layers: int = 2,
         dag_method: Literal["gumbel", "notears"] = "notears",
+        use_causal_gating: bool = True,
     ) -> None:
         super().__init__()
         self.encoder_type = encoder_type
         self.fusion_type = fusion_type
         self.latent_dim = latent_dim
         self.hidden_dim = hidden_dim
+        self.use_causal_gating = use_causal_gating
 
         # ── 1. Unimodal Encoders  →  each outputs (B, L, hidden_dim) ─────
         if encoder_type == "foundation":
@@ -148,32 +150,48 @@ class LatentBottleneck(nn.Module):
         text: torch.Tensor,
         audio: torch.Tensor,
         video: torch.Tensor,
-    ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
+    ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
         """
         Input:  text  (B, L, text_dim)
                 audio (B, L, audio_dim)
                 video (B, L, video_dim)
-        Output: mu     (B, L, latent_dim)
-                logvar (B, L, latent_dim)
-                t_feat (B, L, hidden_dim)  — unimodal hidden reps for causal graph
-                a_feat (B, L, hidden_dim)
-                v_feat (B, L, hidden_dim)
+        Output: mu         (B, L, latent_dim)
+                logvar     (B, L, latent_dim)
+                t_feat     (B, L, hidden_dim)  — pre-gate unimodal reps
+                a_feat     (B, L, hidden_dim)
+                v_feat     (B, L, hidden_dim)
+                adj_matrix (B, 3, 3)           — causal adjacency matrix
         """
         t_feat = self.text_enc(text)    # (B, L, hidden_dim)
         a_feat = self.audio_enc(audio)  # (B, L, hidden_dim)
         v_feat = self.video_enc(video)  # (B, L, hidden_dim)
 
-        if self.fusion_type == "crossmodal":
-            hidden = self.fusion_net(t_feat, a_feat, v_feat)  # (B, L_out, hidden_dim)
+        # Causal graph runs on pre-fusion unimodal reps — sees each modality independently.
+        # This is the theoretically correct place: the graph learns cross-modal dependencies
+        # before they are collapsed into a joint representation.
+        adj_matrix = self.causal_graph(t_feat, a_feat, v_feat)  # (B, 3, 3)
+
+        if self.use_causal_gating:
+            # Column sums: how much influence each modality exerts across all targets.
+            # Softmax normalizes so the total gating magnitude is preserved.
+            modality_weights = F.softmax(adj_matrix.sum(dim=1), dim=-1)  # (B, 3)
+            t_fused = t_feat * modality_weights[:, 0].unsqueeze(1).unsqueeze(2)
+            a_fused = a_feat * modality_weights[:, 1].unsqueeze(1).unsqueeze(2)
+            v_fused = v_feat * modality_weights[:, 2].unsqueeze(1).unsqueeze(2)
         else:
-            fused = torch.cat([t_feat, a_feat, v_feat], dim=-1)  # (B, L, 3*hidden_dim)
-            hidden = self.fusion_net(fused)                        # (B, L, hidden_dim)
+            t_fused, a_fused, v_fused = t_feat, a_feat, v_feat
+
+        if self.fusion_type == "crossmodal":
+            hidden = self.fusion_net(t_fused, a_fused, v_fused)  # (B, L_out, hidden_dim)
+        else:
+            fused = torch.cat([t_fused, a_fused, v_fused], dim=-1)  # (B, L, 3*hidden_dim)
+            hidden = self.fusion_net(fused)                           # (B, L, hidden_dim)
 
         mu = self.fc_mu(hidden)                                # (B, L, latent_dim)
         logvar = self.fc_logvar(hidden)                        # (B, L, latent_dim)
         logvar = torch.clamp(logvar, min=-10.0, max=5.0)
 
-        return mu, logvar, t_feat, a_feat, v_feat
+        return mu, logvar, t_feat, a_feat, v_feat, adj_matrix
 
     def reparameterize(self, mu: torch.Tensor, logvar: torch.Tensor) -> torch.Tensor:
         """
@@ -203,10 +221,7 @@ class LatentBottleneck(nn.Module):
                 logvar      (B, L, d_z)   ← for KL loss
                 adj_matrix  (B, 3, 3)     ← causal graph over {T, A, V}
         """
-        mu, logvar, t_feat, a_feat, v_feat = self.encode(text, audio, video)
-
-        # Causal graph on unimodal hidden reps (B, L, H) — before collapse to latent
-        adj_matrix = self.causal_graph(t_feat, a_feat, v_feat)  # (B, 3, 3)
+        mu, logvar, t_feat, a_feat, v_feat, adj_matrix = self.encode(text, audio, video)
 
         z = self.reparameterize(mu, logvar)   # (B, L, latent_dim)
         z_permuted = z.permute(0, 2, 1)       # (B, latent_dim, L) for UNet1D

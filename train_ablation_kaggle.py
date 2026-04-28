@@ -101,23 +101,23 @@ FULL_MODEL_CFG: Dict[str, Any] = {
     "ddim_steps": 50,
     # Loss weights
     "beta_kl":        0.1,
-    "lambda_diff":    0.1,
+    "lambda_diff":    0.05,
     "lambda_causal":  0.05,
     "lambda_recon":   0.5,
     "cfg_scale":      3.0,
     "ema_decay":      0.999,
     "label_smoothing": 0.1,
     "free_bits":       0.0,
-    # Ablation toggles (all ON for full model)
-    # Note: diffusion and reconstruction remain off until proven stable.
-    # The meaningful "Full Model" components are: causal graph + VAE + augmentation.
-    # Turn diffusion/reconstruction on only for the specific ablations that test them.
+    # Ablation toggles — all theoretically motivated components enabled.
+    # Diffusion uses stop_gradient + gamma_diff warmup (kicks in at epoch 9) for stability.
+    # Reconstruction remains off: crossmodal token-count mismatch causes shape errors.
+    # Focal loss (gamma=2) directly addresses the Fear/Disgust/Surprise F1=0 collapse.
     "use_reconstruction": False,
-    "use_diffusion":      False,
+    "use_diffusion":      True,
     "use_causal_graph":   True,
     "use_augmentation":   True,
     "use_beta_tc_vae":    False,
-    "use_focal_loss":     False,
+    "use_focal_loss":     True,
     "focal_gamma":        2.0,
     # Fine-grained ablation flags (all ON for full model)
     "use_vae":                  True,

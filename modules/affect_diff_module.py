@@ -131,6 +131,7 @@ class AffectDiffModule(pl.LightningModule):
             num_cross_attn_layers=num_cross_attn_layers,
             num_self_attn_layers=num_self_attn_layers,
             dag_method=dag_method,
+            use_causal_gating=use_causal_graph,
         )
 
         # ── 2. Attention Pooling + Task Classifier ────────────────────────
