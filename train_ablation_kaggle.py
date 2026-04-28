@@ -31,6 +31,7 @@ import json
 import logging
 import math
 import os
+import re
 import sys
 import time
 from pathlib import Path
@@ -160,13 +161,15 @@ ABLATION_CONFIGS: Dict[str, Dict[str, Any]] = {
     # 2. Keep graph structure but remove NOTEARS acyclicity constraint (→ L1 sparsity only)
     "No_NOTEARS": {"dag_method": "gumbel"},
 
-    # 3. Replace Perceiver cross-modal bottleneck with simple concat+MLP
-    "No_Perceiver": {"fusion_type": "concat"},
+    # 3. Add Perceiver cross-modal bottleneck (Full_Model uses concat+MLP by default).
+    #    Tests whether a heavier Perceiver-style cross-attention fusion helps on this dataset.
+    "Perceiver_Fusion": {"fusion_type": "crossmodal"},
 
     # 4. Deterministic encoder: z = mu, no reparameterization, KL = 0
     "No_VAE": {"use_vae": False},
 
-    # 5. Remove reconstruction decoder (L_recon = 0)
+    # 5. No_Reconstruction is a no-op (Full_Model already has use_reconstruction=False due to
+    #    shape mismatch with crossmodal tokens). Included as documentation; do not run.
     "No_Reconstruction": {"use_reconstruction": False},
 
     # 6. Remove diffusion generative prior (L_diff = 0)
@@ -230,13 +233,19 @@ ABLATION_CONFIGS: Dict[str, Dict[str, Any]] = {
         "use_augmentation":   False,
         "use_vae":            False,
     },
+
+    # ── Seed replicates for statistical significance (±std reporting) ─────────
+    "Full_Model_s43":    {"seed": 43},
+    "Full_Model_s44":    {"seed": 44},
+    "Baseline_MulT_s43": {"seed": 43},
+    "Baseline_MulT_s44": {"seed": 44},
 }
 
 # Group tags for --group filtering
 ABLATION_GROUPS: Dict[str, List[str]] = {
     "arch": [
-        "Full_Model", "No_Causal_Graph", "No_NOTEARS", "No_Perceiver",
-        "No_VAE", "No_Reconstruction", "No_Diffusion", "No_Stop_Gradient",
+        "Full_Model", "No_Causal_Graph", "No_NOTEARS", "Perceiver_Fusion",
+        "No_VAE", "No_Diffusion", "No_Stop_Gradient",
         "No_CFG", "No_Causal_Diffusion_Cond", "Classifier_Only",
     ],
     "obj": [
@@ -251,8 +260,18 @@ ABLATION_GROUPS: Dict[str, List[str]] = {
         "HP_label_smooth_0.0", "HP_label_smooth_0.2",
         "HP_free_bits_1.0", "HP_free_bits_4.0",
     ],
-    "baseline": ["Baseline_TFN", "Baseline_MulT", "Baseline_MISA"],
-    "all": list(ABLATION_CONFIGS.keys()) + ["Baseline_TFN", "Baseline_MulT", "Baseline_MISA"],
+    "baseline": [
+        "Baseline_TFN", "Baseline_MulT", "Baseline_MISA",
+        "Baseline_MMIM", "Baseline_TETFN",
+    ],
+    "seeds": [
+        "Full_Model_s43", "Full_Model_s44",
+        "Baseline_MulT_s43", "Baseline_MulT_s44",
+    ],
+    "all": list(ABLATION_CONFIGS.keys()) + [
+        "Baseline_TFN", "Baseline_MulT", "Baseline_MISA",
+        "Baseline_MMIM", "Baseline_TETFN",
+    ],
 }
 
 
@@ -736,6 +755,184 @@ class MISAModule(_BaselineBase):
         return loss
 
 
+# ── MMIM ──────────────────────────────────────────────────────────────────────
+
+class MMIMModule(_BaselineBase):
+    """MMIM — Multimodal InfoMax (Han et al., ACL-IJCNLP 2021).
+
+    Maximizes mutual information between each unimodal representation and the
+    joint multimodal representation via an InfoNCE contrastive lower bound.
+    The classifier receives the concatenation of all four representations.
+
+    Reference: https://arxiv.org/abs/2109.00412
+    """
+
+    def __init__(
+        self,
+        text_dim: int = 300, audio_dim: int = 74, video_dim: int = 35,
+        num_classes: int = 6, hidden_dim: int = 128,
+        dropout: float = 0.3, lr: float = 5e-4, weight_decay: float = 1e-4,
+        epochs: int = 100, label_smoothing: float = 0.1,
+        lambda_mi: float = 0.1, temperature: float = 0.07,
+    ) -> None:
+        super().__init__(lr=lr, weight_decay=weight_decay, epochs=epochs,
+                         num_classes=num_classes, label_smoothing=label_smoothing)
+        self.save_hyperparameters()
+
+        def _enc(in_dim: int) -> nn.Sequential:
+            return nn.Sequential(
+                nn.Linear(in_dim, hidden_dim), nn.LayerNorm(hidden_dim),
+                nn.GELU(), nn.Dropout(dropout),
+                nn.Linear(hidden_dim, hidden_dim),
+            )
+
+        self.t_enc = _enc(text_dim)
+        self.a_enc = _enc(audio_dim)
+        self.v_enc = _enc(video_dim)
+
+        self.fusion = nn.Sequential(
+            nn.Linear(hidden_dim * 3, hidden_dim * 2),
+            nn.LayerNorm(hidden_dim * 2),
+            nn.GELU(), nn.Dropout(dropout),
+            nn.Linear(hidden_dim * 2, hidden_dim),
+        )
+
+        # Projection heads for InfoNCE MI bound
+        self.proj_t = nn.Linear(hidden_dim, hidden_dim)
+        self.proj_a = nn.Linear(hidden_dim, hidden_dim)
+        self.proj_v = nn.Linear(hidden_dim, hidden_dim)
+        self.proj_m = nn.Linear(hidden_dim, hidden_dim)
+
+        self.classifier = nn.Sequential(
+            nn.Linear(hidden_dim * 4, hidden_dim),
+            nn.GELU(), nn.Dropout(dropout),
+            nn.Linear(hidden_dim, num_classes),
+        )
+
+    def _infonce(self, zm: torch.Tensor, zu: torch.Tensor) -> torch.Tensor:
+        zm = F.normalize(self.proj_m(zm), dim=-1)
+        zu = F.normalize(zu, dim=-1)
+        logits = (zm @ zu.T) / self.hparams.temperature
+        labels = torch.arange(zm.shape[0], device=zm.device)
+        return (F.cross_entropy(logits, labels) + F.cross_entropy(logits.T, labels)) / 2.0
+
+    def forward(self, text: torch.Tensor, audio: torch.Tensor, video: torch.Tensor):
+        ht = self.t_enc(text.mean(1))
+        ha = self.a_enc(audio.mean(1))
+        hv = self.v_enc(video.mean(1))
+        hm = self.fusion(torch.cat([ht, ha, hv], dim=-1))
+        return self.classifier(torch.cat([ht, ha, hv, hm], dim=-1))
+
+    def _step(self, batch, stage):
+        text  = batch["text"]
+        audio = batch["audio"]
+        video = batch["vision"]
+        labels = batch["labels"].long()
+
+        ht = self.t_enc(text.mean(1))
+        ha = self.a_enc(audio.mean(1))
+        hv = self.v_enc(video.mean(1))
+        hm = self.fusion(torch.cat([ht, ha, hv], dim=-1))
+        logits = self.classifier(torch.cat([ht, ha, hv, hm], dim=-1))
+
+        loss_ce = F.cross_entropy(logits.float(), labels,
+                                  label_smoothing=self.hparams.label_smoothing)
+        loss_mi = (
+            self._infonce(hm, self.proj_t(ht))
+            + self._infonce(hm, self.proj_a(ha))
+            + self._infonce(hm, self.proj_v(hv))
+        ) / 3.0
+        loss = loss_ce + self.hparams.lambda_mi * loss_mi
+
+        preds = torch.argmax(logits, dim=1)
+        acc   = (preds == labels).float().mean()
+        self.log(f"{stage}_loss",    loss,    prog_bar=True, sync_dist=True)
+        self.log(f"{stage}_acc",     acc,     prog_bar=True, sync_dist=True)
+        self.log(f"{stage}_mi_loss", loss_mi, sync_dist=True)
+        if self._use_bal and stage in ("val", "test"):
+            met = self._bal_val if stage == "val" else self._bal_test
+            bal = met(preds, labels)
+            self.log(f"{stage}_bal_acc", bal, on_step=False, on_epoch=True, sync_dist=True)
+        return loss
+
+
+# ── TETFN ─────────────────────────────────────────────────────────────────────
+
+class TETFNModule(_BaselineBase):
+    """TETFN — Text-Enhanced Temporal Fusion Network (Yang et al., EMNLP Findings 2022).
+
+    Text features guide audio and video via cross-modal attention after temporal
+    1D convolution encoders capture local patterns. A shared self-attention layer
+    then integrates the three text-guided streams before mean-pool classification.
+
+    Reference: EMNLP 2022 Findings — Text-Enhanced Transformer Fusion Network
+    """
+
+    def __init__(
+        self,
+        text_dim: int = 300, audio_dim: int = 74, video_dim: int = 35,
+        num_classes: int = 6, hidden_dim: int = 128, n_heads: int = 4,
+        dropout: float = 0.3, lr: float = 5e-4, weight_decay: float = 1e-4,
+        epochs: int = 100, label_smoothing: float = 0.1,
+    ) -> None:
+        super().__init__(lr=lr, weight_decay=weight_decay, epochs=epochs,
+                         num_classes=num_classes, label_smoothing=label_smoothing)
+        self.save_hyperparameters()
+
+        def _tconv(in_dim: int) -> nn.Sequential:
+            return nn.Sequential(
+                nn.Conv1d(in_dim, hidden_dim, kernel_size=3, padding=1),
+                nn.GroupNorm(min(8, hidden_dim), hidden_dim),
+                nn.GELU(),
+                nn.Conv1d(hidden_dim, hidden_dim, kernel_size=3, padding=1),
+                nn.GroupNorm(min(8, hidden_dim), hidden_dim),
+                nn.GELU(),
+            )
+
+        self.t_tconv = _tconv(text_dim)
+        self.a_tconv = _tconv(audio_dim)
+        self.v_tconv = _tconv(video_dim)
+
+        # Audio and video attend to text (text-guided cross-attention)
+        self.ta_attn = nn.MultiheadAttention(hidden_dim, n_heads, dropout=dropout, batch_first=True)
+        self.tv_attn = nn.MultiheadAttention(hidden_dim, n_heads, dropout=dropout, batch_first=True)
+        self.norm_a  = nn.LayerNorm(hidden_dim)
+        self.norm_v  = nn.LayerNorm(hidden_dim)
+
+        # Self-attention over all three streams
+        self.self_attn  = nn.MultiheadAttention(hidden_dim, n_heads, dropout=dropout, batch_first=True)
+        self.norm_fused = nn.LayerNorm(hidden_dim)
+
+        self.classifier = nn.Sequential(
+            nn.Linear(hidden_dim * 3, hidden_dim),
+            nn.GELU(), nn.Dropout(dropout),
+            nn.Linear(hidden_dim, num_classes),
+        )
+
+    def forward(self, text: torch.Tensor, audio: torch.Tensor, video: torch.Tensor):
+        # (B, L, D) → conv expects (B, D, L) → back to (B, L, H)
+        T = self.t_tconv(text.permute(0, 2, 1)).permute(0, 2, 1)
+        A = self.a_tconv(audio.permute(0, 2, 1)).permute(0, 2, 1)
+        V = self.v_tconv(video.permute(0, 2, 1)).permute(0, 2, 1)
+
+        # Text guides audio and video via cross-attention
+        A_g, _ = self.ta_attn(A, T, T)
+        A = self.norm_a(A + A_g)
+        V_g, _ = self.tv_attn(V, T, T)
+        V = self.norm_v(V + V_g)
+
+        # Self-attention over all three streams concatenated along time
+        L = T.shape[1]
+        fused = torch.cat([T, A, V], dim=1)         # (B, 3L, H)
+        f_out, _ = self.self_attn(fused, fused, fused)
+        fused = self.norm_fused(fused + f_out)
+
+        t_pool = fused[:, :L].mean(1)
+        a_pool = fused[:, L:2 * L].mean(1)
+        v_pool = fused[:, 2 * L:].mean(1)
+        return self.classifier(torch.cat([t_pool, a_pool, v_pool], dim=-1))
+
+
 # ──────────────────────────────────────────────────────────────────────────────
 # Rich metrics utilities
 # ──────────────────────────────────────────────────────────────────────────────
@@ -942,6 +1139,8 @@ def _build_affect_diff_model(cfg: Dict[str, Any]) -> AffectDiffModule:
 
 
 def _build_baseline_model(name: str, cfg: Dict[str, Any]) -> _BaselineBase:
+    # Strip seed suffix e.g. Baseline_MulT_s43 → Baseline_MulT
+    base_name = re.sub(r'_s\d+$', '', name)
     shared = dict(
         text_dim=cfg["text_dim"], audio_dim=cfg["audio_dim"], video_dim=cfg["video_dim"],
         num_classes=cfg["num_classes"], hidden_dim=cfg["hidden_dim"],
@@ -949,12 +1148,16 @@ def _build_baseline_model(name: str, cfg: Dict[str, Any]) -> _BaselineBase:
         lr=cfg["lr"], weight_decay=cfg["weight_decay"],
         epochs=cfg["epochs"], label_smoothing=cfg["label_smoothing"],
     )
-    if name == "Baseline_TFN":
+    if base_name == "Baseline_TFN":
         return TFNModule(**{**shared, "proj_dim": 16})
-    elif name == "Baseline_MulT":
+    elif base_name == "Baseline_MulT":
         return MulTModule(**shared)
-    elif name == "Baseline_MISA":
+    elif base_name == "Baseline_MISA":
         return MISAModule(**shared)
+    elif base_name == "Baseline_MMIM":
+        return MMIMModule(**shared)
+    elif base_name == "Baseline_TETFN":
+        return TETFNModule(**shared)
     raise ValueError(f"Unknown baseline: {name}")
 
 
@@ -1350,8 +1553,8 @@ def generate_paper_figures(results_path: str = RESULTS_JSON,
     # Define the preferred display order for the ablation table
     arch_order = [
         "Full_Model", "Classifier_Only",
-        "No_Causal_Graph", "No_NOTEARS", "No_Perceiver",
-        "No_VAE", "No_Reconstruction", "No_Diffusion",
+        "No_Causal_Graph", "No_NOTEARS", "Perceiver_Fusion",
+        "No_VAE", "No_Diffusion",
         "No_Stop_Gradient", "No_CFG", "No_Causal_Diffusion_Cond",
         "Baseline_TFN", "Baseline_MulT", "Baseline_MISA",
     ]
@@ -1395,7 +1598,7 @@ def generate_paper_figures(results_path: str = RESULTS_JSON,
         print("  saved fig1_ablation_main.png")
 
     # ── Figure 2: Per-class F1 heatmap ────────────────────────────────────
-    hm_names = [n for n in arch_order if n in data]
+    hm_names = [n for n in arch_order if n in data]  # arch_order defined above
     if hm_names:
         mat = np.array([
             [data[n].get("rich_metrics", {}).get("per_class_f1", {}).get(c, float("nan"))
@@ -1549,7 +1752,10 @@ def main() -> None:
     PLOTS_DIR    = args.plots_dir
 
     if args.list:
-        all_names = list(ABLATION_CONFIGS.keys()) + ["Baseline_TFN", "Baseline_MulT", "Baseline_MISA"]
+        all_names = list(ABLATION_CONFIGS.keys()) + [
+            "Baseline_TFN", "Baseline_MulT", "Baseline_MISA",
+            "Baseline_MMIM", "Baseline_TETFN",
+        ]
         print("\nAvailable experiments:")
         for n in all_names:
             grp = [g for g, ns in ABLATION_GROUPS.items() if n in ns and g != "all"]

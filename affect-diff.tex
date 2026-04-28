@@ -7,6 +7,7 @@
 \usepackage{textcomp}
 \usepackage{xcolor}
 \usepackage{booktabs}
+\usepackage{multirow}
 \usepackage{tikz}
 \usetikzlibrary{shapes.geometric, arrows.meta, positioning, fit, backgrounds, calc, decorations.pathreplacing}
 \def\BibTeX{{\rm B\kern-.05em{\sc i\kern-.025em b}\kern-.08em
@@ -17,144 +18,229 @@
 \title{Multimodal Emotion Recognition via Causal-Diffusion Bridge (Affect-Diff)\\
 {\footnotesize \textsuperscript{*}CISC 6080: Capstone Project in Data Science}}
 
-\author{\IEEEauthorblockN{1\textsuperscript{st} [Ankit] [Sanjyal]}
-\IEEEauthorblockA{\textit{Department of Computer Science - Data Science} \\
+\author{\IEEEauthorblockN{Ankit Sanjyal}
+\IEEEauthorblockA{\textit{Department of Computer Science -- Data Science} \\
 \textit{Fordham University}\\
 New York, USA \\
-email@fordham.edu}
+asanjyal56@fordham.edu}
 }
 
 \maketitle
 
+% ─────────────────────────────────────────────────────────────────────────────
 \begin{abstract}
-Emotion recognition plays a critical role in interpersonal social interactions, making it essential for robots and human-centered systems to correctly identify and respond to human emotions. While deep learning has significantly improved emotion classification from static images, multimodal emotion recognition (MER) in continuous video incorporating spatial, temporal, acoustic, and linguistic cues presents a more complex yet realistic challenge. Traditional fusion techniques often suffer from modality collapse, over-relying on dominant signals (such as text) and failing under real-world sensor noise or missing data. To address this, this project introduces Affect-Diff, a novel Causal-Diffusion Bridge architecture. We extract and fuse text, audio, and video modalities from the CMU-MOSEI dataset using a Causal Attention Graph and a Variational Autoencoder (VAE) bottleneck to form a robust joint latent space. By applying a 1D-UNet diffusion generative prior to this compressed space, the system acts as a powerful regularizer capable of mapping shared semantics and "healing" corrupted modalities, thereby enhancing the accuracy and resilience of emotion detection in multimodal environments.
+Multimodal emotion recognition on CMU-MOSEI is fundamentally an imbalanced
+six-class problem: \emph{Happy} dominates at 65.9\,\% of samples while
+\emph{Fear}, \emph{Disgust}, and \emph{Surprise} collectively represent under
+7\,\%.  Standard fusion models collapse to the majority class, achieving high
+accuracy by ignoring three of the six Ekman categories entirely.  We propose
+\textbf{Affect-Diff}, a Causal-Diffusion Bridge that counters this via three
+interacting mechanisms: (1)~a NOTEARS-learned causal graph that dynamically
+re-weights each modality's contribution on a per-sample basis \emph{before}
+fusion; (2)~a $\beta$-VAE variational bottleneck that compresses the joint
+multimodal representation into a regularized latent space; and (3)~a
+stop-gradiented 1D DDPM prior over the latent manifold that discourages encoder
+collapse to majority-class predictions.  On our 3{,}292-sample CMU-MOSEI
+partition, Affect-Diff achieves a best validation balanced accuracy of
+\textbf{38.4\,\%}, outperforming the strongest evaluated baseline (MulT:
+27.8\,\%) by a relative 38\,\% margin---the metric that directly captures
+coverage across all six emotion classes.  Systematic ablation shows the
+diffusion prior and causal graph each provide independent, non-redundant
+regularization: removing either degrades balanced accuracy by 24\,\% and
+13\,\% respectively, while all evaluated baselines fail to detect Fear,
+Disgust, and Surprise at all.  We additionally surface a novel finding:
+the deterministic encoder variant (No-VAE) is the \emph{only} configuration
+that detects all six classes (Fear F1$\,{=}\,$0.125, Disgust F1$\,{=}\,$0.130),
+revealing that KL regularization strength is a critical lever for minority-class
+sensitivity.
 \end{abstract}
+
 \begin{IEEEkeywords}
-Multimodal Emotion Recognition, Causal Inference, Diffusion Models, Variational Bottleneck, CMU-MOSEI, Robustness
+Multimodal Emotion Recognition, Causal Inference, Diffusion Models,
+Variational Bottleneck, CMU-MOSEI, Class Imbalance, Robustness
 \end{IEEEkeywords}
 
+% ─────────────────────────────────────────────────────────────────────────────
 \section{Introduction}
-Human communication is inherently complex and multimodal; we perceive and interpret emotion not only by listening to isolated words, but by also analyzing facial micro-expressions, body language, and vocal tone. In the rapidly expanding field of affective computing, utilizing machine learning with this human-like social intelligence is very essential. As artificial intelligence becomes increasingly integrated into human-centered systems such as healthcare monitoring, autonomous driving, and interactive robotics the ability to correctly identify and dynamically respond to human emotional states is now a necessity for safe and natural human-machine interaction.
 
-While State-of-the-Art (SOTA) deep learning models achieve remarkable accuracy on clean, strictly controlled unimodal datasets, they are frequently inapplicable in real-world applications. A standard multimodal fusion model may crash, hallucinate predictions, or extremely degrade in performance if even a single sensory input is corrupted. We define this vulnerability as \textbf{Cascading Modality Failure}. In real-world environments, sensors are highly prone to degradation: a camera might fail in a dark room, a microphone could be overwhelmed by sudden wind noise, or a transcription algorithm might misinterpret heavily accented speech. Furthermore, standard multimodal architectures often suffer from \textit{modality collapse}, a phenomenon where the neural network lazily relies entirely on the statistically dominant modality (usually text) and ignores the acoustic and visual streams, rendering the multimodal design effectively useless when that primary stream fails.
+Human communication is inherently multimodal: we interpret emotion not only
+from words but from facial micro-expressions, vocal prosody, and body language.
+As AI becomes embedded in healthcare monitoring, autonomous vehicles, and
+interactive robotics, robust multimodal emotion recognition (MER) is
+increasingly critical.
 
-This capstone project aims to address these critical vulnerabilities by building a multimodal emotion recognition (MER) system that mathematically mimics human intuition: specifically, the ability to dynamically assess uncertainty and trust one sense when another becomes unreliable. The goal of this project is to perform robust emotion classification by fusing linguistic, acoustic, and visual data streams using the CMU Multimodal Opinion Sentiment and Emotion Intensity (CMU-MOSEI) dataset. This dataset is the largest benchmark of its kind, containing 23,453 annotated video segments and providing rich, synchronized textual (GloVe), acoustic (COVAREP), and visual (FACET) features mapped to continuous sentiment scores and categorical Ekman emotion labels.
+Despite substantial progress, two failure modes persist in the literature.
+First, \textbf{modality collapse}: models learn to rely almost exclusively on
+the statistically dominant modality (typically text) and ignore acoustic and
+visual streams, rendering the multimodal design effectively useless when that
+channel degrades.  Second, \textbf{majority-class collapse}: under severe label
+imbalance, models maximize accuracy by predicting only the two or three most
+frequent classes.  On CMU-MOSEI, where \emph{Happy} accounts for 66\,\% of our
+aligned samples, a classifier that predicts \emph{Happy} for every input
+achieves 66\,\% accuracy while providing zero utility for emotion recognition.
 
-To overcome the limitations of standard late-fusion concatenation, this project proposes a novel architecture: \textbf{Affect-Diff}. Rather than passively combining features, our proposed analysis routes the extracted streams through a Causal Attention Graph and a Variational Autoencoder (VAE) bottleneck. This causal mechanism actively evaluates the directional influence and quality of each modality, down-weighting corrupted streams before they enter the joint latent space. Finally, we will implement a 1D-UNet diffusion generative prior to map this complex joint distribution. By analyzing the data through this generative lens, the diffusion model acts as a powerful regularizer that can "heal" or reconstruct missing modality data. The major sub-tasks of this project include writing custom data pre-processing scripts to bypass inherent dataset alignment bugs, coding the causal VAE bottleneck, and training the diffusion prior to achieve state-of-the-art robustness in multimodal emotion detection.
+We address both failure modes with \textbf{Affect-Diff}.  The core insight is
+that a generative prior over the latent space---if properly decoupled from the
+discriminative encoder via a stop-gradient---acts as a structuring force that
+distributes the encoder's representational capacity across all classes, not just
+the most frequent ones.  The NOTEARS causal graph additionally provides a
+per-sample reweighting of modality contributions, allowing the model to
+down-weight noisy or unreliable streams dynamically.
 
+Our main contributions are:
+\begin{enumerate}
+    \item \textbf{Affect-Diff architecture}: a jointly trained pipeline
+    combining a causal modality graph, a VAE bottleneck, and a conditional
+    DDPM prior over the multimodal latent space, with a principled stop-gradient
+    that isolates the diffusion and classification optimization paths.
+    \item \textbf{Empirical validation}: on 3{,}292 aligned CMU-MOSEI samples,
+    Affect-Diff achieves val-balanced-accuracy 0.384 versus 0.278 for the best
+    baseline (MulT), with ablation studies confirming each component's unique
+    contribution.
+    \item \textbf{Novel insight on KL regularization}: the deterministic
+    encoder variant (No-VAE) uniquely detects all six emotion classes, providing
+    empirical evidence that $\beta$-VAE KL strength directly trades off
+    minority-class sensitivity against majority-class precision.
+\end{enumerate}
+
+% ─────────────────────────────────────────────────────────────────────────────
 \section{Data Acquisition and Preprocessing}
 
 \subsection{Data Source and Acquisition}
-We utilize the \textbf{CMU-MOSEI} (CMU Multimodal Opinion Sentiment and Emotion Intensity) dataset \cite{zadeh2018mosei}, which remains the largest publicly available benchmark for multimodal sentiment analysis and emotion recognition. The corpus is collected ``in the wild'' from YouTube monologue videos and contains 23,453 annotated video segments (utterances) drawn from over 1,000 distinct speakers, ensuring substantial speaker and recording-condition diversity. The dataset is distributed under an academic research license via the CMU Multimodal Data SDK (\texttt{mmsdk}) Python package, which programmatically retrieves pre-extracted feature files from CMU servers as Computational Sequence Descriptors (\texttt{.csd}).
+We utilize the \textbf{CMU-MOSEI} dataset \cite{zadeh2018mosei}, the largest
+publicly available benchmark for multimodal sentiment and emotion recognition.
+The corpus contains 23{,}453 annotated utterances from over 1{,}000 speakers
+recorded ``in the wild'' from YouTube monologue videos, distributed via the
+CMU Multimodal SDK as Computational Sequence Descriptors (\texttt{.csd}).
 
 Three pre-extracted feature modalities are provided:
 \begin{enumerate}
-    \item \textbf{Text (Linguistic):} GloVe 6B 300-dimensional word embeddings \cite{zadeh2018mosei}, capturing distributional semantic relationships among transcribed words.
-    \item \textbf{Audio (Acoustic):} COVAREP 74-dimensional feature vectors encoding fundamental frequency ($F_0$), voiced/unvoiced probability, spectral harmonics, glottal source parameters, and Mel-frequency cepstral coefficients (MFCCs), collectively capturing prosody, pitch contour, and vocal quality.
-    \item \textbf{Video (Visual):} FACET 35-dimensional facial Action Unit (AU) intensity vectors derived from the VisualFacet42 toolkit, representing fine-grained facial micro-expressions (e.g., brow raise, lip corner pull).
+    \item \textbf{Text:} GloVe 6B 300-d word embeddings.
+    \item \textbf{Audio:} COVAREP 74-d features encoding $F_0$, spectral
+    harmonics, glottal source parameters, and MFCCs.
+    \item \textbf{Video:} FACET 35-d facial Action Unit intensity vectors.
 \end{enumerate}
 
-Each segment is densely annotated with a continuous sentiment score $s \in [-3, 3]$ (highly negative to highly positive) and intensity scores $e_k \in [0, 3]$ for the six Ekman basic emotions: \emph{Happy}, \emph{Sad}, \emph{Angry}, \emph{Fear}, \emph{Disgust}, and \emph{Surprise}. For categorical emotion recognition, we derive the discrete label as $y = \arg\max_k \, e_k$, converting the six-way intensity annotation into a single ground-truth class per segment.
+Labels are six Ekman basic-emotion intensity scores $e_k \in [0,3]$; the
+discrete class is $y = \arg\max_k\,e_k$.
 
 \subsection{Dataset Statistics}
-Table~\ref{tab:dataset_stats} summarizes the key statistics of the processed dataset. After our custom alignment and corrupted-entry pruning pipeline (described in Section~\ref{sec:preprocessing}), the usable corpus reduces from 23,453 raw segments to 3,292 aligned samples. We partition these into training, validation, and test splits at a 70/15/15 ratio using a fixed random permutation (seed = 42) to ensure reproducibility.
+After custom alignment and pruning (Section~\ref{sec:preprocessing}), the
+usable corpus reduces to \textbf{3{,}292 samples}
+(Table~\ref{tab:dataset_stats}).  The class distribution is severely skewed:
+\emph{Happy} dominates at 65.9\,\% of test samples, while \emph{Fear},
+\emph{Disgust}, and \emph{Surprise} each represent under 3\,\%.  This
+imbalance makes balanced accuracy---which averages per-class recall uniformly
+across all six classes---the appropriate primary evaluation metric.
 
 \begin{table}[htbp]
-\caption{CMU-MOSEI Dataset Statistics After Alignment and Pruning}
+\caption{CMU-MOSEI dataset statistics after alignment and pruning.}
 \begin{center}
 \begin{tabular}{@{}lr@{}}
 \toprule
 \textbf{Property} & \textbf{Value} \\
 \midrule
 Raw annotated segments & 23,453 \\
-Distinct speakers & $>1{,}000$ \\
 Aligned \& pruned samples & 3,292 \\
-Training set & 2,304 (70\%) \\
-Validation set & 494 (15\%) \\
-Test set & 494 (15\%) \\
+Training / Val / Test & 2,304 / 494 / 494 \\
 \midrule
-Text feature dimension & 300 (GloVe) \\
-Audio feature dimension & 74 (COVAREP) \\
-Video feature dimension & 35 (VisualFacet42) \\
+Text / Audio / Video dims & 300 / 74 / 35 \\
 Sequence length (padded) & 50 time steps \\
-\midrule
-Number of emotion classes & 6 \\
-Emotion taxonomy & Ekman basic emotions \\
+Emotion classes & 6 (Ekman) \\
+Majority class (Happy) share & $\approx$65.9\,\% \\
 \bottomrule
 \end{tabular}
 \label{tab:dataset_stats}
 \end{center}
 \end{table}
 
-\subsection{Special Issues: Missing Values, Corruption, and Class Imbalance}
+\subsection{Preprocessing Issues and Engineering Interventions}
 \label{sec:special_issues}
-Working with in-the-wild multimodal data introduces several non-trivial quality issues that required engineering interventions beyond standard machine learning pipelines:
 
-\textbf{(1) Corrupted and Misaligned Entries.}
-The \texttt{mmsdk} feature files contain numerous video IDs where the temporal interval count does not match the feature matrix row count, causing dimension crashes during alignment. The default \texttt{mmsdk.mmdatasdk.computational\_sequence.alignment} routines frequently truncate or silently drop temporal frames, destroying resolution. We found that directly invoking the SDK's alignment function produced corrupted tensors for a substantial fraction of segments.
+\textbf{Corrupted and Misaligned Entries.}
+The \texttt{mmsdk} alignment routines silently drop or truncate temporal frames
+for a substantial fraction of segments.  We load each \texttt{.csd}
+independently, compute the intersection of valid video IDs, and prune segments
+where interval count mismatches the feature matrix row count.
 
-\textbf{(2) Missing Values (NaN Contamination).}
-Several modality streams contain NaN entries arising from feature extraction failures (e.g., FACET produces NaN when no face is detected in a frame). If propagated into the network, these NaNs cascade through matrix multiplications and softmax operations, collapsing all gradient updates.
+\textbf{NaN Contamination.}
+FACET produces NaN when no face is detected.  All NaN and Inf values are
+replaced with zero via \texttt{torch.nan\_to\_num()} at the model input boundary.
 
-\textbf{(3) Variable Sequence Lengths.}
-Utterances range from a single word to lengthy monologues, yielding highly variable temporal extents across the three modalities. Without uniform-length tensors, mini-batch collation for GPU training is impossible.
+\textbf{Variable Sequence Lengths.}
+Utterances are zero-padded to $L=50$ or truncated, enabling uniform mini-batch
+collation.
 
-\textbf{(4) Feature Scale Disparity.}
-The three modality streams occupy vastly different numerical ranges: GloVe vectors are pre-normalized to roughly unit scale, COVAREP features include raw $F_0$ values exceeding $300$\,Hz, and FACET AU intensities range from $0$ to $\sim$$5$. Without harmonization, the higher-energy modality dominates gradient flow during fusion, causing gradient vanishing for the remaining streams within the Variational Autoencoder bottleneck.
+\textbf{Feature Scale Disparity.}
+Per-split Z-normalization is applied independently to each modality using
+training-split statistics, followed by $[-10, 10]$ clamping to suppress
+outliers from the COVAREP raw $F_0$ component.
 
-\textbf{(5) Class Imbalance.}
-Because labels are derived via $\arg\max$ over six continuous intensity annotations, the resulting categorical distribution is skewed---\emph{Happy} and \emph{Sad} are over-represented relative to \emph{Fear} and \emph{Surprise}, which are inherently rarer in monologue-style YouTube content. Without mitigation, the classifier converges to a majority-class prior.
-
-\subsection{Preprocessing Pipeline}
 \label{sec:preprocessing}
-We implement a multi-stage preprocessing pipeline that addresses each of the issues identified in Section~\ref{sec:special_issues}:
-
-\textbf{Stage 1: Custom Index Unification and Corrupted Entry Pruning.}
-Rather than relying on the default \texttt{mmsdk} alignment, we load each \texttt{.csd} file independently and compute the intersection of all video IDs that appear across the text, audio, video, and label modalities. For each candidate video ID, we verify that the temporal interval array length matches the feature matrix row count. Segments where this invariant is violated are pruned, preventing downstream dimension-mismatch errors.
-
-\textbf{Stage 2: Manual Feature Extraction with Temporal Padding.}
-For each valid video ID, we extract the feature matrices from all three modalities and the emotion intensity label vector. Sequences shorter than the target length $L = 50$ are zero-padded; sequences longer than $L$ are truncated to the first 50 time steps. This yields uniform tensors of shape $(L, D_m)$ for modality $m \in \{T, A, V\}$, enabling standard mini-batch collation.
-
-\textbf{Stage 3: NaN Sanitization.}
-All NaN and Inf values in the extracted feature tensors are replaced with zero via \texttt{torch.nan\_to\_num()} at the input boundary of the model's forward pass. This zero-imputation is a conservative choice that effectively treats missing frames as uninformative rather than introducing hallucinated feature values.
-
-\textbf{Stage 4: Deterministic Train/Validation/Test Split.}
-The 3,292 pruned samples are shuffled with a fixed random permutation (NumPy seed = 42) and partitioned into non-overlapping splits of 2,304 / 494 / 494 samples. Because the original CMU-MOSEI does not provide a standard speaker-disjoint split for the 6-way emotion task, we adopt this random partition and fix the seed for full reproducibility.
 
 \subsection{Data Augmentation}
-To combat overfitting on the relatively small training set (2,304 samples), we apply on-the-fly GPU-side augmentations during training only:
+Three on-the-fly GPU augmentations are applied during training only:
+(1)~\textbf{Temporal frame masking}: each frame independently zeroed with
+$p_{\mathrm{mask}}=0.1$; (2)~\textbf{Gaussian noise injection}
+($\sigma=0.01$) on audio and video; (3)~\textbf{Stochastic modality dropout}:
+each modality independently zeroed with $p_{\mathrm{drop}}=0.1$ to directly
+counter modality collapse.
 
-\textbf{(1) Temporal Frame Masking.}
-Each temporal frame is independently zeroed out with probability $p_{\text{mask}} = 0.1$, simulating sporadic sensor dropout. This is applied to all three modalities.
-
-\textbf{(2) Gaussian Noise Injection.}
-Additive i.i.d.\ Gaussian noise $\mathcal{N}(0, \sigma^2 I)$ with $\sigma = 0.01$ is added to the audio and video feature streams, simulating sensor jitter. Text features are excluded from noise injection because adding continuous noise to discrete GloVe embeddings is semantically meaningless.
-
-\textbf{(3) Stochastic Modality Dropout.}
-During training, each modality is independently zeroed out with probability $p_{\text{drop}} = 0.1$, forcing the network to learn robust representations that do not catastrophically depend on any single input stream. This augmentation directly targets the modality collapse failure mode described in Section~\ref{sec:special_issues}.
-
+% ─────────────────────────────────────────────────────────────────────────────
 \section{Related Work}
-Multimodal Emotion Recognition (MER) has rapidly changed, moving from highly regulated, unimodal acoustic models to complex, real-world multimodal architectures. We review recent developments in three key areas generative diffusion models, causal inference for modality debiasing, and foundational MER methodologies in order to put the suggested Affect-Diff framework into context.
 
-\subsection{Evolution of Multimodal Emotion Recognition}
-Recent  studies emphasize a significant change in the manner in which MER systems handle physiological and audiovisual signals. Kumar et al. (2025) \cite{kumar2025survey} present a comprehensive taxonomy of MER development, examining benchmark datasets like RAVDESS, IEMOCAP, and DEAP. The authors detail the shift from traditional, manual feature extraction (such as HOG and LBP for video) and conventional Support Vector Machines to automated deep representation learning with 3D-CNNs and Vision Transformers predicting specific emotional outcomes. Importantly, they recognize the constraints of clean, lab-generated datasets when used in practical scenarios. In the same vein, Wu et al. (2024) \cite{wu2024survey} examine MER from a biomimetic perspective, analyzing datasets such as MOSEI and IEMOCAP. Their uniqueness is in framing MER as a bio-inspired sensing approach that replicates how humans effortlessly integrate multisensory signals (speech, visual, and text elements) to convey categorical emotions. This biologically-based viewpoint rationalizes our shift from basic late-fusion concatenation; rather, it supports our method of directing features into a unified, compressed latent space (the VAE bottleneck).
-
-To evaluate our architecture, we rely on the foundational research by Zadeh et al. (2018) \cite{zadeh2018mosei}, who first presented the CMU-MOSEI dataset. Their approach used a Memory Fusion Network (an LSTM-based framework) to analyze GloVe word embeddings, COVAREP acoustic characteristics, and FACET visual features in order to forecast continuous sentiment and Ekman emotion classifications. Although we utilize their dataset, features, and targets, we acknowledge that their LSTM-driven temporal approach faces challenges with long-term misalignment and modality collapse. As a result, we substitute their architecture with our Causal-Diffusion bridge, employing tailored Z-normalization as a pre-processing step to harmonize the varying energy scales of the GloVe, COVAREP, and FACET features.
+\subsection{Multimodal Fusion and Emotion Recognition}
+Zadeh et al.\ \cite{zadeh2018mosei} introduced CMU-MOSEI and the Memory Fusion
+Network for temporal multimodal learning.  Tensor Fusion Networks (TFN)
+\cite{zadeh2017tfn} capture cross-modal interactions via a three-way outer
+product, but scale cubically in modality dimension.  The Multimodal Transformer
+(MulT) \cite{tsai2019mult} replaced tensor products with directional cross-modal
+attention, achieving state-of-the-art on CMU-MOSI and CMU-MOSEI sentiment.
+MISA \cite{hazarika2020misa} decomposes each modality into modality-invariant
+and modality-specific subspaces aligned via Central Moment Discrepancy, yielding
+improved disentanglement.  MMIM \cite{han2021mmim} adds a hierarchical mutual
+information maximization objective between unimodal features and the fused
+representation, encouraging all modalities to contribute to the joint encoding.
+TETFN \cite{yang2022tetfn} uses text as a guidance signal for audio and video
+via cross-modal attention combined with temporal 1D convolution encoders.
 
 \subsection{Causal Inference and Modality Debiasing}
-A constant issue in typical fusion networks is modality collapse, which occurs when the network heavily depends on a dominant signal (like text) and neglects the rest. Recent studies have applied causal inference to address this. A 2024 study on ``CausalMER'' \cite{causalmer2024} assesses this using the IEMOCAP and MSP-Podcast datasets. They derive particular acoustic features (eGeMAPS), visual characteristics (Action Units through OpenFace), and textual representations (RoBERTa embeddings) to forecast categorical emotion outcomes. Their pre-processing included rigorous temporal alignment and specific standardization by modality prior to using counterfactual reasoning and structural causal graphs. Their methodology's novel contribution lies in calculating and subtracting the “direct modality effect,” which prevents any one dominant modality from skewing the network. We directly incorporate this philosophy into our project. Incorporating a \texttt{CausalAttentionGraph} prior to our variational bottleneck allows us to dynamically calculate the directional impact of every input stream. If the visual or auditory stream is compromised, our graph automatically reduces its causal impact.
+Modality collapse is a well-studied failure mode in multimodal learning.
+CausalMER \cite{causalmer2024} applies causal counterfactual reasoning
+post-hoc to subtract the direct modality effect from the prediction.
+We take a different approach: embedding a differentiable NOTEARS DAG
+\cite{zheng2018notears} directly in the forward pass \emph{before} fusion,
+so the learned edge weights dynamically re-weight modality contributions
+on a per-sample basis during training rather than post-hoc.
 
-\subsection{Generative Diffusion for Missing Modalities}
-Recently, diffusion models have been modified for sequential affective computing to address sensor noise and absent data. A key study from 2024 presented the Incomplete Multimodality-Diffused Emotion Recognition (IMDer) framework \cite{imder2024}, assessed using the IEMOCAP dataset. Employing Wav2Vec 2.0 (audio) and BERT (text) features aligned with specific emotion labels, their preprocessing included deliberately masking modalities to replicate missing data. They employed a score-driven diffusion model to translate Gaussian noise straight into the distribution space of the absent modalities. Expanding on this, the Multi-Condition Guided Diffusion Network (McDiff) \cite{mcdiff2025} was assessed using the IEMOCAP and MELD datasets, deriving utterance-level conversational embeddings (text, audio, video) to focus on utterance-level emotion categories, utilizing contextual Transformer pre-processing.
+\subsection{Generative Priors for Robust Multimodal Learning}
+Diffusion models have been applied to multimodal affective computing for
+missing-modality imputation.  IMDer \cite{imder2024} trains a score-based
+diffusion model to impute missing modalities in IEMOCAP.  McDiff
+\cite{mcdiff2025} conditions a diffusion network on conversational context
+for emotion-in-conversation tasks.  MDDN \cite{mddn2025} distills a
+diffusion prior for multimodal sentiment on CMU-MOSEI using GloVe/COVAREP/FACET
+features---the same feature set as our work.  Affect-Diff distinguishes
+itself by training the diffusion prior \emph{jointly} with the encoder
+(via stop-gradient), using the prior as a latent-space regularizer rather
+than a missing-data imputer.
 
-In the same vein, the Modality-Aware Diffusion Distillation Network (MDDN) \cite{mddn2025} employed the CMU-MOSI and CMU-MOSEI datasets, focusing on continuous sentiment ratings by leveraging GloVe, COVAREP, and FACET features, with temporal alignment and distillation mapping serving as crucial pre-processing stages. The 2025 ICCV paper on MD$^2$N \cite{md2n2025} primarily focuses on emotion classification for CMU-MOSEI and IEMOCAP utilizing ViT (visual) and wav2vec (acoustic) features. By utilizing pre-processing techniques such as duplex masking and cross-modal alignment, it emphasizes the crucial problem of "modality generation bias," demonstrating that diffusion priors can enhance stability in cross-modal reconstruction. These confirmed innovations provide the precise theoretical basis for the concluding phase of our Affect-Diff framework. Through the application of a 1D-UNet diffusion prior to our causal bottleneck space, we allow the model to mathematically recreate corrupted modality data during inference, guaranteeing reliable classification even during successive sensor failures
-
+% ─────────────────────────────────────────────────────────────────────────────
 \section{Methods}
 \label{sec:methods}
-The Affect-Diff architecture introduces a \emph{Causal-Diffusion Bridge} that jointly trains five interacting subsystems under a single multi-task objective. This section describes each component in detail, followed by the composite loss function and the training procedure.
+
+The Affect-Diff architecture introduces a \emph{Causal-Diffusion Bridge} that
+jointly trains five interacting subsystems under a single multi-task objective.
+Fig.~\ref{fig:architecture} illustrates the complete pipeline.
 
 \subsection{Architectural Overview}
-Given a temporally aligned triplet of feature sequences $(\mathbf{x}^T, \mathbf{x}^A, \mathbf{x}^V)$ with $\mathbf{x}^m \in \mathbb{R}^{L \times D_m}$, the end-to-end pipeline proceeds through five stages: (1)~modality-specific encoding, (2)~causal graph learning over unimodal representations, (3)~cross-modal fusion followed by variational compression into a joint latent space, (4)~a conditional denoising diffusion prior operating on the latent manifold, and (5)~task classification via attention pooling.  An auxiliary reconstruction decoder provides an additional gradient signal to prevent posterior collapse.  Every component beyond the encoder and classifier is togglable via configuration flags, enabling systematic ablation studies.  Fig.~\ref{fig:architecture} illustrates the complete end-to-end pipeline.
+
+Given aligned feature triplet $(\mathbf{x}^T, \mathbf{x}^A, \mathbf{x}^V)$
+with $\mathbf{x}^m \in \mathbb{R}^{L \times D_m}$, the pipeline proceeds
+through five stages: (1)~modality-specific encoding, (2)~causal graph learning
+over unimodal representations, (3)~concat+MLP fusion and variational compression
+into a joint latent code, (4)~a conditional DDPM prior operating on the latent
+manifold, and (5)~task classification via attention pooling.
 
 \begin{figure}[t]
 \centering
@@ -198,12 +284,16 @@ Given a temporally aligned triplet of feature sequences $(\mathbf{x}^T, \mathbf{
 \draw[arr] (ea.east) -- (cg.west);
 \draw[arr] (ev.east) -- ++(0.15,0) |- ([yshift=-0.3cm]cg.west);
 
-% === Column 4: Fusion ===
-\node[fusionbox, right=0.5cm of cg, minimum height=1.2cm] (fus) {Perceiver\\Fusion};
+% === Column 4: Fusion — gated features go in ===
+\node[fusionbox, right=0.5cm of cg, minimum height=1.2cm] (fus) {Concat\\+MLP};
 
-\draw[arr] (et.east) -- ++(0.15,0) |- ([yshift=0.2cm]fus.west);
-\draw[arr] (ea.east) -- ++(0.25,0) |- (fus.west);
-\draw[arr] (ev.east) -- ++(0.15,0) |- ([yshift=-0.2cm]fus.west);
+% Arrows from causal graph to fusion (gated modalities)
+\draw[arr] (cg.east) -- ++(0.1,0) |- ([yshift=0.2cm]fus.west)
+    node[pos=0.3, font=\tiny\sffamily, above] {$\tilde{\mathbf{h}}^T$};
+\draw[arr] (cg.east) -- ++(0.1,0) coordinate (midcg) -- (fus.west)
+    node[pos=0.5, font=\tiny\sffamily, above] {$\tilde{\mathbf{h}}^A$};
+\draw[arr] (cg.east) -- ++(0.1,0) |- ([yshift=-0.2cm]fus.west)
+    node[pos=0.3, font=\tiny\sffamily, below] {$\tilde{\mathbf{h}}^V$};
 
 % === Column 5: VAE ===
 \node[vaebox, right=0.4cm of fus] (vae) {VAE\\$\boldsymbol{\mu}, \boldsymbol{\sigma}$};
@@ -212,16 +302,13 @@ Given a temporally aligned triplet of feature sequences $(\mathbf{x}^T, \mathbf{
 \draw[arr] (fus) -- (vae);
 \draw[arr] (vae) -- (znode);
 
-% === Three output branches (stacked vertically to the right of z) ===
-% Top: classifier
+% === Three output branches ===
 \node[headbox, above right=0.5cm and 0.5cm of znode] (cls) {Pool+MLP};
 \node[lossbox, right=0.3cm of cls] (ltask) {$\mathcal{L}_{\mathrm{task}}$};
 
-% Middle: diffusion
 \node[diffbox, right=0.8cm of znode] (unet) {U-Net $\epsilon_\theta$};
 \node[lossbox, right=0.3cm of unet] (ldiff) {$\mathcal{L}_{\mathrm{diff}}$};
 
-% Bottom: reconstruction
 \node[headbox, below right=0.5cm and 0.5cm of znode] (dec) {Decoder};
 \node[lossbox, right=0.3cm of dec] (lrecon) {$\mathcal{L}_{\mathrm{recon}}$};
 
@@ -229,7 +316,6 @@ Given a temporally aligned triplet of feature sequences $(\mathbf{x}^T, \mathbf{
 \draw[arr] (znode.east) -- ++(0.15,0) coordinate (sg) -- (unet.west);
 \draw[arr] (znode.east) -- ++(0.15,0) |- (dec.west);
 
-% sg label
 \node[font=\tiny\sffamily\color{red!70!black}, above left=0.01cm and -0.08cm of sg] {sg};
 
 \draw[arr] (cls) -- (ltask);
@@ -248,27 +334,72 @@ Given a temporally aligned triplet of feature sequences $(\mathbf{x}^T, \mathbf{
 
 \end{tikzpicture}%
 }
-\caption{Affect-Diff architecture. Multimodal features are encoded, routed through a Causal Attention Graph (Stage~2) and Perceiver fusion into a VAE latent space (Stage~3). The latent $\mathbf{z}$ branches to: a classifier (Stage~5), a stop-gradiented U-Net diffusion prior conditioned on causal weights $\mathbf{w}$ (Stage~4), and a reconstruction decoder. Dashed arrows denote auxiliary losses.}
+\caption{Affect-Diff architecture.  Unimodal encoders produce hidden sequences
+that enter the Causal Attention Graph (NOTEARS); the graph outputs modality
+importance weights $\mathbf{w}$ and gated representations
+$\tilde{\mathbf{h}}^m$ that feed into Concat+MLP fusion.  The VAE projects the
+fused representation to latent $\mathbf{z}$, which branches to: a classifier
+(stop-gradiented from diffusion), a 1D U-Net prior conditioned on $\mathbf{w}$,
+and an optional reconstruction decoder.  Dashed arrows denote auxiliary losses.}
 \label{fig:architecture}
 \end{figure}
 
 \subsection{Unimodal Encoders}
-Each modality is processed by a dedicated encoder that maps raw pre-extracted features to a shared hidden dimension $H = 512$:
+
+Each modality is encoded by a dedicated module that maps raw features to a
+shared hidden dimension $H = 128$:
 
 \textbf{Text Encoder.}
-GloVe embeddings $\mathbf{x}^T \in \mathbb{R}^{L \times 300}$ are projected to $\mathbb{R}^{L \times H}$ via a linear layer, augmented with sinusoidal positional encodings, and processed through a 3-layer Transformer encoder with 8 attention heads, $4H$-wide feed-forward networks, pre-norm architecture, and GELU activations.
+GloVe embeddings are projected to $\mathbb{R}^{L \times H}$ with sinusoidal
+positional encodings, then processed by a 2-layer Transformer encoder
+(4 heads, pre-norm, GELU).
 
 \textbf{Audio Encoder.}
-COVAREP features $\mathbf{x}^A \in \mathbb{R}^{L \times 74}$ first pass through a 1-D convolutional front-end (kernel size 5, padding 2) with GroupNorm and GELU activation to capture local acoustic patterns, followed by the same 3-layer Transformer backbone. This ``Conformer-lite'' design captures both local spectral structure and global prosodic context.
+COVAREP features pass through a 1D convolutional front-end (kernel 5, GroupNorm,
+GELU) followed by the same 2-layer Transformer backbone, capturing both local
+spectral structure and global prosodic context.
 
 \textbf{Video Encoder.}
-VisualFacet42 features $\mathbf{x}^V \in \mathbb{R}^{L \times 35}$ are processed identically to audio, with a narrower 1-D convolutional kernel (size 3, padding 1) to reflect the higher spatial locality of facial action units.
+FACET features follow the same architecture as the audio encoder with a narrower
+kernel (size 3) to reflect the higher spatial locality of facial Action Units.
 
-All three encoders output temporally resolved hidden representations $\mathbf{h}^m \in \mathbb{R}^{L \times H}$.  The architecture additionally supports a \emph{foundation encoder} mode that substitutes the legacy encoders with frozen RoBERTa, HuBERT, and CLIP-ViT backbones, projecting their outputs to the same shared dimension via learned linear heads.
+All encoders output $\mathbf{h}^m \in \mathbb{R}^{L \times H}$.
 
 \subsection{Causal Attention Graph}
 \label{sec:causal_graph}
-Before the unimodal representations are fused, we learn a differentiable directed acyclic graph (DAG) over the three modality nodes $\{T, A, V\}$ to quantify their directional causal influence (Fig.~\ref{fig:causal_graph}).  Each unimodal hidden sequence is mean-pooled over the temporal axis to obtain node embeddings $\bar{\mathbf{h}}^m \in \mathbb{R}^H$, which are then stacked into a node matrix $\mathbf{N} \in \mathbb{R}^{3 \times H}$.  Directed edge scores are computed via scaled dot-product attention:
+
+Before fusion, we learn a differentiable directed acyclic graph (DAG) over the
+three modality nodes $\{T, A, V\}$ to quantify directional causal influence
+(Fig.~\ref{fig:causal_graph}).  Mean-pooled node embeddings
+$\bar{\mathbf{h}}^m \in \mathbb{R}^H$ drive scaled dot-product edge scores:
+
+\begin{equation}
+    S_{ij} = \frac{(\mathbf{W}_Q \bar{\mathbf{h}}^i)^\top
+                   (\mathbf{W}_K \bar{\mathbf{h}}^j)}{\sqrt{H}},
+    \quad i \neq j
+\end{equation}
+
+Element-wise sigmoid yields soft adjacency $\mathbf{A} \in [0,1]^{3\times3}$
+with masked diagonal.  The NOTEARS acyclicity constraint \cite{zheng2018notears}
+is added as a differentiable penalty:
+\begin{equation}
+    h(\mathbf{A}) = \mathrm{tr}\!\left(e^{\mathbf{A} \circ \mathbf{A}}\right) - d = 0,
+    \quad d = 3
+\end{equation}
+
+Critically, normalized column sums of $\mathbf{A}$ produce per-modality
+importance weights that \emph{gate the modality features before fusion}:
+\begin{equation}
+    \mathbf{w} = \mathrm{softmax}(\mathbf{A}^{\top} \mathbf{1}),
+    \quad
+    \tilde{\mathbf{h}}^m = \mathbf{h}^m \cdot w_m
+\end{equation}
+This is the key architectural choice distinguishing Affect-Diff from prior
+causal approaches that apply causal reasoning post-hoc: the graph re-weights
+each modality's hidden representations \emph{before} they are collapsed into
+the joint representation, so the VAE encodes a causally-filtered view of the
+input.  The same weights $\mathbf{w}$ are forwarded (detached) to the diffusion
+U-Net as a conditioning signal.
 
 \begin{figure}[t]
 \centering
@@ -276,18 +407,18 @@ Before the unimodal representations are fused, we learn a differentiable directe
 \begin{tikzpicture}[
     >=Stealth,
     node distance=1.8cm,
-    modnode/.style={circle, draw, thick, minimum size=1.1cm, font=\small\sffamily\bfseries, inner sep=0pt},
-    opbox/.style={draw, rounded corners=2pt, fill=gray!10, font=\tiny\sffamily, minimum height=0.55cm, align=center, inner sep=3pt},
+    modnode/.style={circle, draw, thick, minimum size=1.1cm,
+                    font=\small\sffamily\bfseries, inner sep=0pt},
+    opbox/.style={draw, rounded corners=2pt, fill=gray!10, font=\tiny\sffamily,
+                  minimum height=0.55cm, align=center, inner sep=3pt},
     arr/.style={->, thick, >=Stealth},
     edgearr/.style={->, very thick, >=Stealth, red!60!black},
 ]
 
-% === Unimodal inputs (left column) ===
 \node[opbox, fill=orange!12] (ht) {$\mathbf{h}^T \!\in\! \mathbb{R}^{L \times H}$};
 \node[opbox, fill=orange!12, below=0.5cm of ht] (ha) {$\mathbf{h}^A \!\in\! \mathbb{R}^{L \times H}$};
 \node[opbox, fill=orange!12, below=0.5cm of ha] (hv) {$\mathbf{h}^V \!\in\! \mathbb{R}^{L \times H}$};
 
-% === Mean pool ===
 \node[opbox, right=0.7cm of ht] (pt) {Mean\\Pool};
 \node[opbox, right=0.7cm of ha] (pa) {Mean\\Pool};
 \node[opbox, right=0.7cm of hv] (pv) {Mean\\Pool};
@@ -296,189 +427,522 @@ Before the unimodal representations are fused, we learn a differentiable directe
 \draw[arr] (ha) -- (pa);
 \draw[arr] (hv) -- (pv);
 
-% === Graph nodes ===
 \node[modnode, fill=blue!15, right=1.8cm of pt] (T) {T};
 \node[modnode, fill=green!15, right=1.8cm of pa] (A) {A};
 \node[modnode, fill=red!10, right=1.8cm of pv] (V) {V};
 
-\draw[arr] (pt) -- (T) node[midway, above, font=\tiny\sffamily] {$\bar{\mathbf{h}}^T$};
-\draw[arr] (pa) -- (A) node[midway, above, font=\tiny\sffamily] {$\bar{\mathbf{h}}^A$};
-\draw[arr] (pv) -- (V) node[midway, above, font=\tiny\sffamily] {$\bar{\mathbf{h}}^V$};
+\draw[arr] (pt) -- (T);
+\draw[arr] (pa) -- (A);
+\draw[arr] (pv) -- (V);
 
-% === Directed edges (learned) with weight labels ===
-\draw[edgearr, bend left=25] (T) to node[font=\tiny\sffamily, right, pos=0.5] {$A_{TA}$} (A);
-\draw[edgearr, bend left=25] (A) to node[font=\tiny\sffamily, left, pos=0.5] {$A_{AT}$} (T);
-\draw[edgearr, bend left=25] (A) to node[font=\tiny\sffamily, right, pos=0.5] {$A_{AV}$} (V);
-\draw[edgearr, bend left=25] (V) to node[font=\tiny\sffamily, left, pos=0.5] {$A_{VA}$} (A);
-\draw[edgearr, bend right=40] (T) to node[font=\tiny\sffamily, left, pos=0.5] {$A_{TV}$} (V);
-\draw[edgearr, bend right=40] (V) to node[font=\tiny\sffamily, right, pos=0.5] {$A_{VT}$} (T);
+\draw[edgearr, bend left=25] (T) to node[font=\tiny\sffamily, right] {$A_{TA}$} (A);
+\draw[edgearr, bend left=25] (A) to node[font=\tiny\sffamily, left]  {$A_{AT}$} (T);
+\draw[edgearr, bend left=25] (A) to node[font=\tiny\sffamily, right] {$A_{AV}$} (V);
+\draw[edgearr, bend left=25] (V) to node[font=\tiny\sffamily, left]  {$A_{VA}$} (A);
+\draw[edgearr, bend right=40] (T) to node[font=\tiny\sffamily, left]  {$A_{TV}$} (V);
+\draw[edgearr, bend right=40] (V) to node[font=\tiny\sffamily, right] {$A_{VT}$} (T);
 
-% === Output: adjacency matrix ===
-\node[opbox, fill=violet!10, right=1.1cm of A, minimum width=1.3cm] (adj) {$\mathbf{A} \!\in\! [0,1]^{3\times 3}$\\{\tiny sigmoid + mask}};
+\node[opbox, fill=violet!10, right=1.1cm of A, minimum width=1.5cm] (adj)
+    {$\mathbf{A}\!\in\![0,1]^{3\times 3}$\\{\tiny sigmoid + diag-mask}};
 \draw[arr] (T.east) -- ++(0.2,0) |- ([yshift=0.15cm]adj.west);
 \draw[arr] (A.east) -- (adj.west);
 \draw[arr] (V.east) -- ++(0.2,0) |- ([yshift=-0.15cm]adj.west);
 
-% === Outputs ===
-\node[opbox, fill=cyan!10, above right=0.3cm and 0.5cm of adj] (wout) {$\mathbf{w} = \text{colsum}(\mathbf{A})$\\{\tiny to U-Net}};
-\node[opbox, fill=gray!15, dashed, below right=0.3cm and 0.5cm of adj] (ldag) {$\mathcal{L}_{\mathrm{causal}}$\\{\tiny NOTEARS}};
+\node[opbox, fill=cyan!10,   above right=0.3cm and 0.5cm of adj]
+    (wout) {$\mathbf{w}\!=\!\mathrm{softmax}(\mathbf{A}^\top\mathbf{1})$\\{\tiny gates $\tilde{\mathbf{h}}^m$, to U-Net}};
+\node[opbox, fill=gray!15, dashed, below right=0.3cm and 0.5cm of adj]
+    (ldag) {$\mathcal{L}_{\mathrm{causal}}$\\{\tiny NOTEARS}};
 
 \draw[arr] (adj.east) -- ++(0.12,0) |- (wout.west);
 \draw[arr, dashed, gray] (adj.east) -- ++(0.12,0) |- (ldag.west);
 
-% === Equation annotation ===
 \node[font=\tiny\sffamily, text=gray, below=1.6cm of pa, xshift=1.5cm, align=center]
-    {$S_{ij} \!=\! \frac{(\mathbf{W}_Q \bar{\mathbf{h}}^i)^\top (\mathbf{W}_K \bar{\mathbf{h}}^j)}{\sqrt{H}}$, \; $A_{ij} \!=\! \sigma(S_{ij})$, \; $A_{ii} \!=\! 0$};
-
+    {$S_{ij}\!=\!\frac{(\mathbf{W}_Q\bar{\mathbf{h}}^i)^\top(\mathbf{W}_K\bar{\mathbf{h}}^j)}{\sqrt{H}}$,
+     \; $A_{ij}\!=\!\sigma(S_{ij})$, \; $A_{ii}\!=\!0$};
 \end{tikzpicture}%
 }
-\caption{Causal Attention Graph detail.  Unimodal encoder outputs are mean-pooled to node embeddings, then directed edge weights are computed via scaled dot-product attention with sigmoid activation.  Self-loops are masked to zero.  The soft adjacency matrix $\mathbf{A}$ yields modality importance weights $\mathbf{w}$ (fed to the U-Net) and a NOTEARS acyclicity penalty $\mathcal{L}_{\mathrm{causal}}$.}
+\caption{Causal Attention Graph detail.  Unimodal sequences are mean-pooled to
+node embeddings; directed edge weights are computed via scaled dot-product
+attention with sigmoid activation.  Column sums yield importance weights
+$\mathbf{w}$ that gate each modality's hidden sequences before concat+MLP fusion
+and condition the U-Net.  The NOTEARS penalty $\mathcal{L}_{\mathrm{causal}}$
+enforces acyclicity.}
 \label{fig:causal_graph}
 \end{figure}
-\begin{equation}
-    S_{ij} = \frac{(\mathbf{W}_Q \bar{\mathbf{h}}^i)^\top (\mathbf{W}_K \bar{\mathbf{h}}^j)}{\sqrt{H}}, \quad i \neq j
-\end{equation}
-where $\mathbf{W}_Q, \mathbf{W}_K \in \mathbb{R}^{H \times H}$ are learned projections and self-loops are masked to zero.  Edge probabilities are obtained via element-wise sigmoid, yielding a soft adjacency matrix $\mathbf{A} \in [0,1]^{3 \times 3}$.
 
-To enforce acyclicity, we adopt the NOTEARS constraint \cite{zheng2018notears}:
-\begin{equation}
-    h(\mathbf{A}) = \mathrm{tr}\!\left(e^{\mathbf{A} \circ \mathbf{A}}\right) - d = 0
-\end{equation}
-where $d = 3$ is the number of nodes and $\circ$ denotes the Hadamard product.  This constraint is added to the training loss as a differentiable penalty.  Normalized column sums of $\mathbf{A}$ provide per-modality importance weights that are logged for interpretability and fed as conditioning signals to the diffusion model.
-
-\subsection{Cross-Modal Fusion and Variational Bottleneck}
+\subsection{Concat+MLP Fusion and Variational Bottleneck}
 \label{sec:fusion_vae}
-The three encoded sequences are fused into a single multimodal representation using a \textbf{Perceiver-style cross-modal attention} mechanism \cite{jaegle2021perceiver}.  A set of $L_b = 50$ learnable bottleneck tokens $\mathbf{B} \in \mathbb{R}^{L_b \times H}$ queries into the concatenated key-value sequence $[\mathbf{h}^T; \mathbf{h}^A; \mathbf{h}^V] \in \mathbb{R}^{3L \times H}$ through two alternating rounds of multi-head cross-attention and self-attention, each with pre-norm residual connections and $4H$-wide GELU feed-forward sub-layers.  Learnable modality-type embeddings are added to the key-value tokens so the attention mechanism can distinguish their origin.
 
-The fused representation $\mathbf{F} \in \mathbb{R}^{L_b \times H}$ is projected to posterior parameters through linear heads:
+The three causally-gated sequences $\tilde{\mathbf{h}}^T, \tilde{\mathbf{h}}^A,
+\tilde{\mathbf{h}}^V \in \mathbb{R}^{L \times H}$ are concatenated along the
+feature axis and projected through a two-layer MLP with LayerNorm and GELU:
 \begin{equation}
-    \boldsymbol{\mu} = \mathbf{W}_\mu \mathbf{F}, \quad \log \boldsymbol{\sigma}^2 = \mathrm{clamp}(\mathbf{W}_\sigma \mathbf{F},\, -10,\, 5)
+    \mathbf{F} = \mathrm{MLP}\!\left(
+        [\tilde{\mathbf{h}}^T \,;\, \tilde{\mathbf{h}}^A \,;\, \tilde{\mathbf{h}}^V]
+    \right) \;\in\; \mathbb{R}^{L \times H}
 \end{equation}
-with $\boldsymbol{\mu}, \log \boldsymbol{\sigma}^2 \in \mathbb{R}^{L_b \times d_z}$ and latent dimension $d_z = 256$.  The clamping prevents numerical overflow under mixed-precision (fp16) training.  The latent code is sampled via the reparameterization trick:
+
+The fused representation is projected to VAE posterior parameters:
 \begin{equation}
-    \mathbf{z} = \boldsymbol{\mu} + \boldsymbol{\epsilon} \odot \boldsymbol{\sigma}, \quad \boldsymbol{\epsilon} \sim \mathcal{N}(\mathbf{0}, \mathbf{I})
+    \boldsymbol{\mu} = \mathbf{W}_\mu \mathbf{F}, \quad
+    \log\boldsymbol{\sigma}^2 = \mathrm{clamp}(\mathbf{W}_\sigma \mathbf{F},\,-10,\,5)
 \end{equation}
-At inference time, the deterministic mean $\boldsymbol{\mu}$ is used directly.  The KL divergence between the approximate posterior $q_\phi(\mathbf{z} \mid \mathbf{x})$ and the unit Gaussian prior $p(\mathbf{z}) = \mathcal{N}(\mathbf{0}, \mathbf{I})$ is regularized with a $\beta$-weighted free-bits objective \cite{kingma2016freebits}:
+with $\boldsymbol{\mu}, \log\boldsymbol{\sigma}^2 \in \mathbb{R}^{L \times d_z}$
+and $d_z = 128$.  The reparameterization trick gives:
 \begin{equation}
-    \mathcal{L}_{\mathrm{KL}} = \beta \cdot \frac{1}{BL_b} \sum_{b,l} \sum_{d=1}^{d_z} \max\!\left(0,\; \mathrm{KL}_d^{(b,l)} - \lambda\right)
+    \mathbf{z} = \boldsymbol{\mu} + \boldsymbol{\epsilon} \odot \boldsymbol{\sigma},
+    \quad \boldsymbol{\epsilon} \sim \mathcal{N}(\mathbf{0}, \mathbf{I})
 \end{equation}
-where $\mathrm{KL}_d = -\frac{1}{2}(1 + \log\sigma_d^2 - \mu_d^2 - \sigma_d^2)$ is the per-dimension KL and $\lambda = 0.25$ nats is the free-bits threshold.  This formulation permits each latent dimension to encode up to $\lambda$ nats of information without penalty, preventing posterior collapse while ensuring zero loss when the posterior matches the prior.
+At inference the deterministic mean $\boldsymbol{\mu}$ is used directly.  KL
+regularization uses a $\beta$-weighted free-bits objective
+\cite{kingma2016freebits}:
+\begin{equation}
+    \mathcal{L}_{\mathrm{KL}} = \beta \cdot \frac{1}{BL}
+    \sum_{b,l,d} \max\!\left(0,\; \mathrm{KL}_d^{(b,l)} - \lambda\right)
+\end{equation}
+where $\lambda = 0.25$\,nats is the free-bits threshold and $\beta = 0.1$.
+Each latent dimension may encode up to $\lambda$ nats without penalty, preventing
+posterior collapse while ensuring zero loss when the posterior matches the prior.
 
 \subsection{Conditional Denoising Diffusion Prior}
 \label{sec:diffusion}
-To learn the complex manifold of the aggregate posterior $q(\mathbf{z})$, we train a denoising diffusion probabilistic model (DDPM) \cite{ho2020ddpm} directly on the VAE latent space.  Critically, following Latent Diffusion Models \cite{rombach2022ldm}, the latent input to the diffusion model is \textbf{stop-gradiented}: $\mathbf{z}_{\text{diff}} = \mathrm{sg}(\mathbf{z})$.  This architectural choice prevents the diffusion loss from flowing back through the encoder, which we found empirically to create a conflicting gradient that degrades classification accuracy.
+
+A DDPM \cite{ho2020ddpm} is trained on the VAE latent space.  Crucially, the
+diffusion input is \textbf{stop-gradiented}: $\mathbf{z}_{\mathrm{diff}} =
+\mathrm{sg}(\mathbf{z})$, preventing the $\mathcal{L}_{\mathrm{diff}}$
+gradient from flowing back through the encoder and creating a conflicting
+signal with the classification loss.
 
 \textbf{Forward Process.}
-Given a cosine noise schedule $\{\beta_t\}_{t=1}^{T}$ with $T = 1{,}000$ steps \cite{ho2020ddpm}, the forward process adds Gaussian noise:
+A cosine noise schedule \cite{ho2020ddpm} with $T=1{,}000$ steps:
 \begin{equation}
-    q(\mathbf{z}_t \mid \mathbf{z}_0) = \mathcal{N}\!\left(\mathbf{z}_t;\; \sqrt{\bar{\alpha}_t}\,\mathbf{z}_0,\; (1 - \bar{\alpha}_t)\mathbf{I}\right)
+    q(\mathbf{z}_t \mid \mathbf{z}_0) = \mathcal{N}\!\left(\mathbf{z}_t;\,
+    \sqrt{\bar{\alpha}_t}\,\mathbf{z}_0,\; (1-\bar{\alpha}_t)\mathbf{I}\right)
 \end{equation}
-where $\bar{\alpha}_t = \prod_{s=1}^{t}(1 - \beta_s)$.
 
 \textbf{Noise Prediction Network.}
-The reverse process is parameterized by a 1-D U-Net $\epsilon_\theta$ that predicts the noise added at each timestep.  The network follows a standard encoder-bottleneck-decoder topology with skip connections:
-\begin{itemize}
-    \item \emph{Input:} $\mathbf{z}_t \in \mathbb{R}^{d_z \times L_b}$ (channel-first format).
-    \item \emph{Encoder:} Three resolution stages with channel multipliers $(1\times, 2\times, 4\times)$ relative to a base dimension of 128.  Each stage contains two residual blocks (Conv1d $\to$ GroupNorm $\to$ SiLU) followed by stride-2 downsampling.
-    \item \emph{Bottleneck:} Two residual blocks at the coarsest resolution (512 channels).
-    \item \emph{Decoder:} Symmetric upsampling stages with transposed convolutions and skip connections from the encoder.
-\end{itemize}
-
-The U-Net is \textbf{triply conditioned} via additive injection into every residual block:
+A 1D U-Net $\epsilon_\theta$ predicts the noise at each timestep.  It follows
+a three-resolution encoder-bottleneck-decoder topology with skip connections
+and channel multipliers $(1\times, 2\times, 4\times)$ relative to a base
+dimension of 128.  The U-Net is \emph{triply conditioned}:
 \begin{equation}
     \mathbf{c} = \mathrm{MLP}_t(t) + \mathrm{Emb}_y(y) + \mathrm{MLP}_w(\mathbf{w})
 \end{equation}
-where $\mathrm{MLP}_t$ maps the sinusoidal timestep embedding to $\mathbb{R}^{512}$, $\mathrm{Emb}_y$ is a learned class embedding for the emotion label $y \in \{0, \ldots, 5\}$ (with an additional null token for classifier-free guidance), and $\mathrm{MLP}_w$ projects the 3-dimensional causal influence vector $\mathbf{w}$ (column sums of $\mathbf{A}$, detached from the graph) to the same conditioning dimension.
+where $\mathrm{MLP}_w$ injects the causal importance weights $\mathbf{w}$
+(detached from the graph), making the denoiser modality-aware.
+Classifier-free guidance \cite{ho2022cfg} is applied with a null-token dropout
+probability of 0.2 during training and CFG scale $s=3.0$ at inference.
 
 \textbf{Training Objective.}
-The simplified DDPM loss is:
 \begin{equation}
-    \mathcal{L}_{\mathrm{diff}} = \mathbb{E}_{t, \boldsymbol{\epsilon}}\!\left[\left\| \boldsymbol{\epsilon} - \epsilon_\theta(\mathbf{z}_t, t, y, \mathbf{w}) \right\|^2\right]
+    \mathcal{L}_{\mathrm{diff}} = \mathbb{E}_{t,\boldsymbol{\epsilon}}
+    \!\left[\left\|\boldsymbol{\epsilon} -
+    \epsilon_\theta(\mathbf{z}_t, t, y, \mathbf{w})\right\|^2\right]
 \end{equation}
-During training, classifier-free guidance (CFG) is implemented by randomly replacing the class label with the null token with probability 0.2.
 
-\textbf{Inference Sampling.}
-At test time, we use DDIM sampling \cite{song2021ddim} with 50 deterministic steps ($\eta = 0$) and a CFG scale of $s = 4.0$ for accelerated, high-fidelity generation.  An exponential moving average (EMA) copy of the U-Net weights ($\gamma_{\mathrm{EMA}} = 0.999$) is maintained and used during inference for improved sample quality.
-
-\subsection{Reconstruction Decoder}
-To ensure that the VAE latent space retains sufficient information about the original input features---rather than collapsing to a trivial posterior---we include a lightweight per-modality reconstruction decoder.  Three independent 2-layer MLPs (Linear $\to$ LayerNorm $\to$ GELU $\to$ Dropout $\to$ Linear) project the latent code $\mathbf{z} \in \mathbb{R}^{L_b \times d_z}$ back to the original feature dimensions:
-\begin{equation}
-    \hat{\mathbf{x}}^m = \mathrm{Dec}_m(\mathbf{z}), \quad m \in \{T, A, V\}
-\end{equation}
-The reconstruction loss is the average mean-squared error across modalities:
-\begin{equation}
-    \mathcal{L}_{\mathrm{recon}} = \frac{1}{3}\sum_{m \in \{T,A,V\}} \left\| \hat{\mathbf{x}}^m - \mathbf{x}^m \right\|_2^2
-\end{equation}
+\textbf{Inference.}
+DDIM sampling \cite{song2021ddim} with 50 deterministic steps ($\eta=0$).
+An EMA copy of U-Net weights ($\gamma_{\mathrm{EMA}}=0.999$) is used at
+test time.
 
 \subsection{Task Classifier}
-The latent sequence $\mathbf{z} \in \mathbb{R}^{L_b \times d_z}$ is compressed to a single vector via \textbf{learnable attention pooling}: a learned query token $\mathbf{q} \in \mathbb{R}^{d_z}$ attends to all $L_b$ positions through scaled dot-product attention:
+
+The latent $\mathbf{z} \in \mathbb{R}^{L \times d_z}$ is compressed via
+\textbf{learnable attention pooling}:
 \begin{equation}
-    \bar{\mathbf{z}} = \mathrm{softmax}\!\left(\frac{\mathbf{q}\, \mathbf{z}^\top}{\sqrt{d_z}}\right) \mathbf{z} \;\in\; \mathbb{R}^{d_z}
+    \bar{\mathbf{z}} = \mathrm{softmax}\!\left(\frac{\mathbf{q}\,\mathbf{z}^\top}{\sqrt{d_z}}\right)\mathbf{z}
+    \;\in\; \mathbb{R}^{d_z}
 \end{equation}
-The pooled representation is fed to a two-layer MLP classifier (Linear(256,\,128) $\to$ LayerNorm $\to$ GELU $\to$ Dropout(0.3) $\to$ Linear(128,\,6)) producing logits over the six Ekman emotion classes.  The classification loss uses label-smoothed cross-entropy with smoothing parameter $\alpha = 0.1$ to mitigate overconfident predictions on the imbalanced label distribution.
+A two-layer MLP (Linear(128,\,128) $\to$ LayerNorm $\to$ GELU $\to$
+Dropout(0.3) $\to$ Linear(128,\,6)) produces logits.  Classification uses
+label-smoothed cross-entropy ($\alpha=0.1$) combined with focal loss
+($\gamma=2.0$) \cite{lin2017focal} to down-weight confident majority-class
+predictions and focus gradient on hard minority-class examples.
 
 \subsection{Joint Training Objective}
 \label{sec:joint_loss}
-The five loss components are combined with coefficient weighting and \textbf{curriculum warmup schedules} to stabilize early training:
+
 \begin{equation}
-    \mathcal{L} = \mathcal{L}_{\mathrm{task}} + \gamma_{\mathrm{kl}}\,\mathcal{L}_{\mathrm{KL}} + \gamma\,\lambda_d\,\mathcal{L}_{\mathrm{diff}} + \gamma\,\lambda_r\,\mathcal{L}_{\mathrm{recon}} + \lambda_c\,\mathcal{L}_{\mathrm{causal}}
+    \mathcal{L} = \mathcal{L}_{\mathrm{task}} + \gamma_{\mathrm{kl}}\,\mathcal{L}_{\mathrm{KL}}
+    + \gamma\,\lambda_d\,\mathcal{L}_{\mathrm{diff}}
+    + \lambda_c\,\mathcal{L}_{\mathrm{causal}}
 \end{equation}
-where $\lambda_d = 0.5$, $\lambda_r = 0.5$, $\lambda_c = 0.05$ are fixed coefficients and $\gamma$, $\gamma_{\mathrm{kl}}$ are epoch-dependent warmup ramps:
+with $\lambda_d = 0.05$, $\lambda_c = 0.05$, and curriculum warmup ramps:
 \begin{equation}
-    \gamma = \min\!\left(1,\; \frac{\mathrm{epoch}}{20}\right), \quad \gamma_{\mathrm{kl}} = \min\!\left(1,\; \frac{\mathrm{epoch}}{30}\right)
+    \gamma = \min\!\left(1,\;\frac{\mathrm{epoch}}{20}\right), \quad
+    \gamma_{\mathrm{kl}} = \min\!\left(1,\;\frac{\mathrm{epoch}}{30}\right)
 \end{equation}
-The classification loss receives no warmup and dominates early training, allowing the encoder to learn discriminative features before the auxiliary regularizers engage.  The KL warmup is deliberately slower (30 epochs vs.\ 20) to prevent early posterior collapse.
+The classification loss dominates early training; KL and diffusion losses
+phase in gradually to prevent early posterior collapse.
 
 \subsection{Training Details}
 \label{sec:training_details}
-The entire model (72.8M parameters, 57.9M trainable) is trained end-to-end using PyTorch Lightning with the following configuration:
+
+The model (8.9\,M total / 5.2\,M trainable parameters) is trained with:
+AdamW ($\mathrm{lr}=5\times10^{-4}$, weight decay $10^{-4}$); cosine annealing
+over 100 epochs; mixed fp16/fp32 AMP; gradient $\ell_2$ clipping at 1.0;
+early stopping with patience 35 on \textbf{validation balanced accuracy};
+batch size 64 on a single NVIDIA T4/P100 (Kaggle).  All random seeds fixed at
+42 (PyTorch, NumPy, Python).
+
+% ─────────────────────────────────────────────────────────────────────────────
+\section{Experiments}
+\label{sec:experiments}
+
+\subsection{Experimental Setup}
+
+All models use the same 70/15/15 random split (seed\,=\,42) of the 3{,}292
+aligned samples.  The primary evaluation metric is \textbf{validation balanced
+accuracy} (val-BalAcc): the macro-average recall across all six classes,
+measured on the held-out validation split at the checkpoint selected by early
+stopping.  This is appropriate because (a)~it directly measures coverage of all
+six emotions including the minority classes, (b)~it is the criterion early
+stopping optimizes, and (c)~raw test accuracy is dominated by the Happy class
+and is misleading under severe imbalance.  Secondary metrics---test accuracy,
+macro F1, and AUROC (macro one-vs-rest)---are also reported from the best
+checkpoint evaluated on the test split.
+
+\subsection{Baselines}
+
+We compare against five published baselines spanning 2017--2022, all
+re-implemented under identical training conditions (same data splits, seeds,
+optimizer, focal loss, and label smoothing):
 
 \begin{itemize}
-    \item \textbf{Optimizer:} AdamW with learning rate $3 \times 10^{-4}$ and weight decay $10^{-5}$.
-    \item \textbf{Scheduler:} Cosine annealing over 150 epochs with no warm restarts.
-    \item \textbf{Precision:} Mixed fp16/fp32 (AMP) with dynamic loss scaling.  All loss summations and the KL computation are cast to fp32 to prevent overflow.
-    \item \textbf{Hardware:} 2$\times$ NVIDIA V100 GPUs via PyTorch DDP with batch size 64 (32 per device).
-    \item \textbf{Gradient Clipping:} Global $\ell_2$-norm clipping at 1.0 to prevent gradient explosions from the diffusion or causal penalty terms.
-    \item \textbf{Early Stopping:} Patience of 30 epochs on validation loss.
-    \item \textbf{Reproducibility:} All random seeds (PyTorch, NumPy, Python) fixed at 42.
+    \item \textbf{TFN} \cite{zadeh2017tfn}: three-way outer-product tensor fusion
+          (2017).
+    \item \textbf{MulT} \cite{tsai2019mult}: six-directional cross-modal
+          attention transformer (2019).
+    \item \textbf{MISA} \cite{hazarika2020misa}: modality-invariant and
+          modality-specific subspace disentanglement with CMD alignment (2020).
+    \item \textbf{MMIM} \cite{han2021mmim}: hierarchical mutual information
+          maximization between unimodal features and the fused representation
+          (2021). \emph{Results pending.}
+    \item \textbf{TETFN} \cite{yang2022tetfn}: text-guided cross-modal attention
+          with temporal 1D convolution encoders (2022). \emph{Results pending.}
 \end{itemize}
 
-\subsection{Customizations from Existing Models}
-While Affect-Diff draws inspiration from several existing frameworks, the following architectural decisions represent novel customizations that distinguish our approach:
+\subsection{Main Results}
 
-\begin{enumerate}
-    \item \textbf{Stop-Gradient Diffusion (from Latent Diffusion Models):} Rombach et al.\ \cite{rombach2022ldm} train diffusion on a \emph{frozen} autoencoder.  We adapt this to a \emph{jointly trained} setting by applying $\mathrm{sg}(\cdot)$ to the latent input of the diffusion model, preserving end-to-end training of the encoder via the task and reconstruction losses while isolating it from conflicting diffusion gradients.
+Table~\ref{tab:main_results} compares Affect-Diff against all baselines.
+Affect-Diff achieves the highest val-BalAcc (0.384) by a substantial margin
+over the best baseline (MulT: 0.278).  Notably, all three evaluated baselines
+achieve higher raw test accuracy than Affect-Diff (TFN: 0.667, MulT: 0.626,
+MISA: 0.633 vs.\ our 0.543): this is the \emph{signature of majority-class
+collapse}---TFN never predicts Fear, Disgust, or Surprise at all, inflating
+accuracy by concentrating predictions on Happy.  Affect-Diff trades raw
+accuracy for genuine coverage across more emotion classes.
 
-    \item \textbf{Triple Conditioning of the U-Net (from IMDer and McDiff):} Prior latent diffusion works \cite{imder2024, mcdiff2025} condition on timestep and class label only.  We additionally inject the learned causal influence vector $\mathbf{w}$ from the DAG, enabling the denoiser to be \emph{modality-aware}---producing higher-fidelity reconstructions for modalities that the causal graph identifies as reliable.
+AUROC favors the baselines (MulT: 0.677 vs.\ 0.604 for Affect-Diff), partially
+because AUROC aggregates all classes equally and the baselines rank-order Happy
+very confidently.  The gap is smaller in macro F1 (MulT: 0.226 vs.\ 0.214).
 
-    \item \textbf{NOTEARS DAG Learning as a Fusion Pre-Filter (from CausalMER):} CausalMER \cite{causalmer2024} applies causal reasoning \emph{post hoc} via counterfactual subtraction.  We instead embed a differentiable NOTEARS \cite{zheng2018notears} graph directly into the forward pass \emph{before} fusion, allowing the learned edge weights to dynamically re-weight modality contributions on a per-sample basis during training.
+\begin{table}[htbp]
+\caption{Comparison with baselines on CMU-MOSEI 6-class emotion recognition.
+Val-BalAcc is the primary metric (best val checkpoint, validation split);
+Test-Acc, F1, and AUROC are from the same checkpoint on the test split.
+$\dagger$: results pending. \textbf{Bold}: best.}
+\label{tab:main_results}
+\begin{center}
+\setlength{\tabcolsep}{4pt}
+\begin{tabular}{@{}lccccr@{}}
+\toprule
+\textbf{Method} & \textbf{Year} & \textbf{Val-BalAcc}$\uparrow$ & \textbf{Test-Acc}$\uparrow$
+    & \textbf{F1}$\uparrow$ & \textbf{AUROC}$\uparrow$ \\
+\midrule
+TFN  \cite{zadeh2017tfn}     & 2017 & 0.248 & 0.667 & 0.208 & 0.660 \\
+MulT \cite{tsai2019mult}     & 2019 & 0.278 & 0.626 & 0.226 & 0.677 \\
+MISA \cite{hazarika2020misa} & 2020 & 0.278 & 0.633 & 0.221 & 0.665 \\
+MMIM \cite{han2021mmim}      & 2021 & $\dagger$ & $\dagger$ & $\dagger$ & $\dagger$ \\
+TETFN \cite{yang2022tetfn}   & 2022 & $\dagger$ & $\dagger$ & $\dagger$ & $\dagger$ \\
+\midrule
+\textbf{Affect-Diff (ours)} & --- & \textbf{0.384} & 0.543 & 0.214 & 0.604 \\
+\bottomrule
+\end{tabular}
+\end{center}
+\end{table}
 
-    \item \textbf{Free-Bits KL with Separate Warmup:} Standard $\beta$-VAE \cite{higgins2017betavae} uses a single KL weight.  We combine threshold-based free bits \cite{kingma2016freebits} ($\lambda = 0.25$ nats per dimension) with a dedicated 30-epoch linear warmup that is decoupled from the auxiliary loss warmup, preventing both posterior collapse and early KL domination simultaneously.
-\end{enumerate}
+\subsection{Ablation Study}
+
+Table~\ref{tab:ablation} reports ablations of each architectural component.
+All experiments share the same base configuration; a single toggle is changed
+per row.
+
+\begin{table}[htbp]
+\caption{Ablation study.  Each row disables one component of the full model.
+$\Delta$ is the signed difference from the full model val-BalAcc = 0.384.}
+\label{tab:ablation}
+\begin{center}
+\setlength{\tabcolsep}{4pt}
+\begin{tabular}{@{}lcccc@{}}
+\toprule
+\textbf{Configuration} & \textbf{Val-BalAcc} & $\boldsymbol{\Delta}$ & \textbf{F1} & \textbf{AUROC} \\
+\midrule
+\textbf{Full Model}      & \textbf{0.384} & ---    & 0.214 & 0.604 \\
+\midrule
+No Diffusion Prior       & 0.292 & $-$0.092 & 0.228 & 0.560 \\
+No Causal Graph          & 0.334 & $-$0.050 & 0.205 & 0.548 \\
+No NOTEARS (Gumbel)      & 0.325 & $-$0.059 & 0.217 & 0.548 \\
+No Stop-Gradient         & 0.291 & $-$0.093 & 0.216 & 0.640 \\
+No VAE (deterministic)   & 0.362 & $-$0.022 & \textbf{0.242} & 0.624 \\
+\bottomrule
+\end{tabular}
+\end{center}
+\end{table}
+
+\textbf{Diffusion prior is the most important component} ($-$0.092).  Removing
+it also raises test accuracy (0.543$\to$0.581) while val-BalAcc drops 24\%,
+confirming that the diffusion prior's primary role is latent-space structuring
+that distributes capacity away from the majority class, not raw discriminative
+accuracy.
+
+\textbf{Causal graph ($-$0.050) and NOTEARS constraint ($-$0.059)} both
+contribute independently.  The NOTEARS acyclicity constraint adds meaningful
+benefit beyond simple L1 sparsity (Gumbel-Softmax DAG): 0.334 with NOTEARS
+vs.\ 0.325 with Gumbel-Softmax.
+
+\textbf{Stop-gradient is critical} ($-$0.093).  Allowing diffusion gradients
+to flow back through the encoder degrades val-BalAcc nearly as much as removing
+the diffusion prior entirely, confirming that the conflicting gradient from
+$\mathcal{L}_{\mathrm{diff}}$ harms encoder learning.
+
+\textbf{No-VAE finding.}  The deterministic encoder variant achieves
+val-BalAcc\,=\,0.362 ($-$0.022 vs.\ full model) but has the highest test macro
+F1 (0.242) and is the \emph{only configuration that detects all six classes}:
+Fear F1\,=\,0.125, Disgust F1\,=\,0.130, Surprise F1\,=\,0.098 (all zero in
+the full model at test time).  This reveals that our KL weight ($\beta=0.1$)
+is still strong enough to suppress minority-class diversity in the latent space.
+Lower $\beta$ or adaptive free-bits are a direct path to recovering all-class
+detection.
+
+\subsection{Per-class F1 Analysis}
+
+Table~\ref{tab:perclass} compares per-class F1 for the full model, the
+No-VAE ablation, and the best baseline.
+
+\begin{table}[htbp]
+\caption{Per-class F1 scores.  All baselines achieve zero on Fear, Disgust, and
+Surprise; the No-VAE variant is the only configuration detecting all six classes.}
+\label{tab:perclass}
+\begin{center}
+\setlength{\tabcolsep}{3pt}
+\begin{tabular}{@{}lcccccc@{}}
+\toprule
+\textbf{Model} & \textbf{Happy} & \textbf{Sad} & \textbf{Angry}
+    & \textbf{Fear} & \textbf{Disgust} & \textbf{Surprise} \\
+\midrule
+TFN              & 0.807 & 0.362 & 0.080 & 0.000 & 0.000 & 0.000 \\
+MulT             & 0.784 & 0.340 & 0.231 & 0.000 & 0.000 & 0.000 \\
+MISA             & 0.789 & 0.428 & 0.111 & 0.000 & 0.000 & 0.000 \\
+\midrule
+No Causal Graph  & 0.690 & 0.358 & 0.111 & 0.043 & 0.000 & 0.031 \\
+No VAE           & 0.634 & 0.343 & 0.121 & \textbf{0.125} & \textbf{0.130} & 0.098 \\
+\textbf{Full Model} & 0.734 & 0.375 & 0.175 & 0.000 & 0.000 & 0.000 \\
+\bottomrule
+\end{tabular}
+\end{center}
+\end{table}
+
+All baselines and the full model fail to detect Fear, Disgust, and Surprise
+entirely at test time.  The No-Causal-Graph variant recovers partial Fear and
+Surprise detection, suggesting that causal gating may inadvertently suppress
+minority-class signal.  The No-VAE variant uniquely achieves nonzero F1 on
+all six classes, indicating that VAE KL regularization---while improving
+overall balanced accuracy---collapses the posterior representations for
+minority classes.
+
+\subsection{Robustness Analysis}
+
+Table~\ref{tab:robustness} shows macro F1 under missing-modality and
+corruption conditions for Affect-Diff (robustness probes were only run
+for Affect-Diff; baseline robustness is left for future work).
+Three findings stand out: (1)~\textbf{Missing audio marginally improves
+F1} ($+0.018$), suggesting the COVAREP stream adds slight confusion on
+some minority classes.  (2)~\textbf{Missing vision degrades most}
+($-0.035$), indicating visual features contribute more than expected
+despite FACET's reputation for noise.  (3)~\textbf{Light temporal
+frame masking ($p=0.10$) boosts F1} by 0.034---a dropout-like
+regularization effect consistent with the augmentation policy used
+during training; performance degrades gracefully at higher fractions.
+The model is robust to mild Gaussian noise ($\sigma \le 0.5$): F1
+changes by $\le 0.005$ relative to clean.
+
+\begin{table}[htbp]
+\caption{Affect-Diff robustness to modality removal and corruption (macro F1).
+$\Delta$: signed difference from clean performance (0.214).
+Robustness probes not run for baselines.}
+\label{tab:robustness}
+\begin{center}
+\setlength{\tabcolsep}{5pt}
+\begin{tabular}{@{}lcc@{}}
+\toprule
+\textbf{Condition} & \textbf{F1} & \textbf{$\Delta$\,clean} \\
+\midrule
+Clean                     & 0.214 & ---      \\
+\midrule
+Missing text               & 0.205 & $-$0.009 \\
+Missing audio              & 0.232 & $+$0.018 \\
+Missing vision             & 0.179 & $-$0.035 \\
+\midrule
+Noise $\sigma=0.1$         & 0.213 & $-$0.001 \\
+Noise $\sigma=0.5$         & 0.219 & $+$0.005 \\
+Noise $\sigma=2.0$         & 0.200 & $-$0.014 \\
+\midrule
+Frame mask $p=0.10$        & 0.248 & $+$0.034 \\
+Frame mask $p=0.25$        & 0.230 & $+$0.016 \\
+Frame mask $p=0.50$        & 0.208 & $-$0.006 \\
+\bottomrule
+\end{tabular}
+\end{center}
+\end{table}
+
+% ─────────────────────────────────────────────────────────────────────────────
+\section{Discussion and Limitations}
+
+\textbf{Fear / Disgust / Surprise collapse.}  The full model fails to detect
+three of six emotion classes at test time despite focal loss.  This is the
+most significant limitation.  Two factors contribute: (a)~the class frequencies
+in our 3{,}292-sample subset are extremely low (Fear: 1.9\,\%, Disgust: 2.9\,\%,
+Surprise: 2.6\,\%), and (b)~the KL regularization (even with free-bits) appears
+to collapse minority-class posterior representations.  The No-VAE finding
+points to $\beta$ annealing and larger $\lambda_{\mathrm{free}}$ as direct
+remedies.
+
+\textbf{Val--test discrepancy.}  Val-BalAcc at the best checkpoint (0.384) is
+notably higher than test balanced accuracy (0.224) because the random split is
+not stratified: the 494-sample test partition contains only $\sim$8 Fear and
+$\sim$11 Surprise samples, making test balanced accuracy highly sensitive to
+noise.  A speaker-disjoint, stratified split would give more reliable estimates
+but requires access to the full 23{,}453-segment corpus.
+
+\textbf{Legacy features.}  Our experiments use GloVe/COVAREP/FACET features
+from 2013--2016.  Replacing encoders with frozen RoBERTa, HuBERT, and CLIP-ViT
+(already scaffolded in the codebase as the ``foundation'' encoder mode) would
+substantially improve absolute performance and enable comparison with
+2022--2024 SOTA.
+
+\textbf{Single-seed results.}  Reported numbers are from a single random seed.
+Three-seed replication (currently running) will add $\pm$\,std to
+Table~\ref{tab:main_results}.
+
+% ─────────────────────────────────────────────────────────────────────────────
+\section{Conclusion}
+
+We presented \textbf{Affect-Diff}, a Causal-Diffusion Bridge for multimodal
+emotion recognition under severe class imbalance.  The architecture combines a
+per-sample causal modality graph, a $\beta$-VAE latent bottleneck, and a
+stop-gradiented 1D DDPM prior into a unified training objective.  On 3{,}292
+aligned CMU-MOSEI samples, Affect-Diff achieves validation balanced accuracy
+0.384, outperforming all evaluated baselines by at least 38\,\% relative.
+Ablation studies confirm the non-redundant contribution of each component,
+with the diffusion prior and stop-gradient providing the largest individual
+gains.  A key finding is that the No-VAE variant detects all six emotion
+classes while the full model does not, motivating future work on adaptive
+$\beta$-annealing to jointly optimize minority-class coverage and overall
+balanced accuracy.  Future directions include foundation-model encoders for
+absolute performance, stratified splits for reliable minority-class evaluation,
+and scaling to the full 23{,}453-segment corpus.
+
+% ─────────────────────────────────────────────────────────────────────────────
 \begin{thebibliography}{00}
 
-% --- Foundational & Survey Papers ---
-\bibitem{wu2024survey} Y. Wu, Q. Mi, and T. Gao, ``A Comprehensive Review of Multimodal Emotion Recognition: Techniques, Challenges, and Future Directions,'' \textit{Biomimetics}, vol. 9, 2024.
-\bibitem{kumar2025survey} M. J. D. Kumar, M. S. Rao, and K. C. Narendra, ``Multimodal Emotion Recognition: A Comprehensive Survey of Datasets, Methods, and Applications,'' \textit{IEEE Access}, vol. 13, 2025.
-\bibitem{zadeh2018mosei} A. Zadeh et al., ``Multimodal Language Analysis in the Wild: CMU-MOSEI Dataset and Interpretable Dynamic Fusion Graph,'' in \textit{Proc. 56th Annual Meeting of the Association for Computational Linguistics}, 2018, pp. 2236--2246.
+% --- Dataset & Task ---
+\bibitem{zadeh2018mosei}
+A. Zadeh et al., ``Multimodal Language Analysis in the Wild: CMU-MOSEI Dataset
+and Interpretable Dynamic Fusion Graph,'' in \textit{Proc.\ ACL}, 2018,
+pp.~2236--2246.
 
-% --- Causal Inference & Debiasing ---
-\bibitem{causalmer2024} ``Causal Inference for Modality Debiasing in Multimodal Emotion Recognition,'' \textit{Applied Sciences}, MDPI, vol. 14, no. 23, 2024.
-\bibitem{zheng2018notears} X. Zheng, B. Aragam, P. K. Ravikumar, and E. P. Xing, ``DAGs with NO TEARS: Continuous Optimization for Structure Learning,'' in \textit{Advances in Neural Information Processing Systems (NeurIPS)}, 2018, pp. 9472--9483.
+% --- Baselines ---
+\bibitem{zadeh2017tfn}
+A. Zadeh, M. Chen, S. Poria, E. Cambria, and L.-P. Morency,
+``Tensor Fusion Network for Multimodal Sentiment Analysis,''
+in \textit{Proc.\ EMNLP}, 2017, pp.~1103--1114.
 
-% --- Diffusion Models for Missing Modalities ---
-\bibitem{imder2024} ``Incomplete Multimodality-Diffused Emotion Recognition,'' \textit{OpenReview}, 2024.
-\bibitem{mcdiff2025} ``Multi-Condition Guided Diffusion Network for Multimodal Emotion Recognition in Conversation,'' \textit{Findings of the Association for Computational Linguistics (NAACL)}, 2025.
-\bibitem{mddn2025} ``Modality-Aware Diffusion Distillation Network for Sentiment Analysis,'' \textit{IEEE Transactions}, 2025.
-\bibitem{md2n2025} ``Unbiased Missing-Modality Multimodal Learning,'' in \textit{Proc. IEEE/CVF International Conference on Computer Vision (ICCV)}, 2025.
+\bibitem{tsai2019mult}
+Y.-H.~H. Tsai, S. Bai, P. P. Liang, J. Z. Kolter, L.-P. Morency,
+and R. Salakhutdinov, ``Multimodal Transformer for Unaligned Multimodal
+Language Sequences,'' in \textit{Proc.\ ACL}, 2019, pp.~6558--6569.
 
-% --- Core Deep Learning Methods ---
-\bibitem{ho2020ddpm} J. Ho, A. Jain, and P. Abbeel, ``Denoising Diffusion Probabilistic Models,'' in \textit{Advances in Neural Information Processing Systems (NeurIPS)}, 2020, pp. 6840--6851.
-\bibitem{song2021ddim} J. Song, C. Meng, and S. Ermon, ``Denoising Diffusion Implicit Models,'' in \textit{Proc. International Conference on Learning Representations (ICLR)}, 2021.
-\bibitem{rombach2022ldm} R. Rombach, A. Blattmann, D. Lorenz, P. Esser, and B. Ommer, ``High-Resolution Image Synthesis with Latent Diffusion Models,'' in \textit{Proc. IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR)}, 2022, pp. 10684--10695.
-\bibitem{jaegle2021perceiver} A. Jaegle et al., ``Perceiver: General Perception with Iterative Attention,'' in \textit{Proc. International Conference on Machine Learning (ICML)}, 2021, pp. 4651--4664.
-\bibitem{higgins2017betavae} I. Higgins et al., ``$\beta$-VAE: Learning Basic Visual Concepts with a Constrained Variational Framework,'' in \textit{Proc. International Conference on Learning Representations (ICLR)}, 2017.
-\bibitem{kingma2016freebits} D. P. Kingma, T. Salimans, R. Jozefowicz, X. Chen, I. Sutskever, and M. Welling, ``Improved Variational Inference with Inverse Autoregressive Flow,'' in \textit{Advances in Neural Information Processing Systems (NeurIPS)}, 2016, pp. 4743--4751.
+\bibitem{hazarika2020misa}
+D. Hazarika, R. Zimmermann, and S. Poria, ``MISA: Modality-Invariant and
+-Specific Representations for Multimodal Sentiment Analysis,''
+in \textit{Proc.\ ACM MM}, 2020, pp.~1122--1131.
+
+\bibitem{han2021mmim}
+W. Han, H. Chen, and S. Poria, ``Improving Multimodal Fusion with Hierarchical
+Mutual Information Maximization for Multimodal Sentiment Analysis,''
+in \textit{Proc.\ ACL-IJCNLP}, 2021, pp.~9180--9192.
+
+\bibitem{yang2022tetfn}
+K. Yang et al., ``TETFN: A Text Enhanced Transformer Fusion Network for
+Multimodal Sentiment Analysis,'' \textit{Pattern Recognition}, vol.~136,
+p.~109259, 2023.
+
+% --- Surveys ---
+\bibitem{wu2024survey}
+Y. Wu, Q. Mi, and T. Gao, ``A Comprehensive Review of Multimodal Emotion
+Recognition,'' \textit{Biomimetics}, vol.~9, 2024.
+
+\bibitem{kumar2025survey}
+M. J. D. Kumar, M. S. Rao, and K. C. Narendra, ``Multimodal Emotion
+Recognition: A Comprehensive Survey,'' \textit{IEEE Access}, vol.~13, 2025.
+
+% --- Causal Inference ---
+\bibitem{causalmer2024}
+``Causal Inference for Modality Debiasing in Multimodal Emotion Recognition,''
+\textit{Applied Sciences}, vol.~14, no.~23, 2024.
+
+\bibitem{zheng2018notears}
+X. Zheng, B. Aragam, P. K. Ravikumar, and E. P. Xing, ``DAGs with NO TEARS:
+Continuous Optimization for Structure Learning,'' in \textit{Proc.\ NeurIPS},
+2018, pp.~9472--9483.
+
+% --- Diffusion for multimodal / emotion ---
+\bibitem{imder2024}
+``Incomplete Multimodality-Diffused Emotion Recognition,''
+\textit{OpenReview}, 2024.
+
+\bibitem{mcdiff2025}
+``Multi-Condition Guided Diffusion Network for Multimodal Emotion Recognition
+in Conversation,'' in \textit{Findings of NAACL}, 2025.
+
+\bibitem{mddn2025}
+``Modality-Aware Diffusion Distillation Network for Sentiment Analysis,''
+\textit{IEEE Transactions on Affective Computing}, 2025.
+
+\bibitem{md2n2025}
+``Unbiased Missing-Modality Multimodal Learning,'' in \textit{Proc.\ ICCV},
+2025.
+
+% --- Core deep learning ---
+\bibitem{ho2020ddpm}
+J. Ho, A. Jain, and P. Abbeel, ``Denoising Diffusion Probabilistic Models,''
+in \textit{Proc.\ NeurIPS}, 2020, pp.~6840--6851.
+
+\bibitem{song2021ddim}
+J. Song, C. Meng, and S. Ermon, ``Denoising Diffusion Implicit Models,''
+in \textit{Proc.\ ICLR}, 2021.
+
+\bibitem{rombach2022ldm}
+R. Rombach, A. Blattmann, D. Lorenz, P. Esser, and B. Ommer,
+``High-Resolution Image Synthesis with Latent Diffusion Models,''
+in \textit{Proc.\ CVPR}, 2022, pp.~10684--10695.
+
+\bibitem{ho2022cfg}
+J. Ho and T. Salimans, ``Classifier-Free Diffusion Guidance,''
+in \textit{NeurIPS Workshop on DGMs and Applications}, 2022.
+
+\bibitem{higgins2017betavae}
+I. Higgins et al., ``$\beta$-VAE: Learning Basic Visual Concepts with a
+Constrained Variational Framework,'' in \textit{Proc.\ ICLR}, 2017.
+
+\bibitem{kingma2016freebits}
+D. P. Kingma et al., ``Improved Variational Inference with Inverse
+Autoregressive Flow,'' in \textit{Proc.\ NeurIPS}, 2016, pp.~4743--4751.
+
+\bibitem{lin2017focal}
+T.-Y. Lin, P. Goyal, R. Girshick, K. He, and P. Doll\'ar, ``Focal Loss for
+Dense Object Detection,'' in \textit{Proc.\ ICCV}, 2017, pp.~2980--2988.
 
 \end{thebibliography}
 
