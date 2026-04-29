@@ -196,8 +196,11 @@ def load_mosei_sentiment(
     N = len(raw_labels)
     logger.info("  BERT: %d samples, dim=%d", N, bert_feats.shape[1])
 
-    # Unsqueeze text to (N, 1, 768) — compatible with model's (B, L, D) input
-    bert_feats = bert_feats[:, np.newaxis, :]  # (N, 1, 768)
+    # Tile BERT sentence embedding to (N, max_len, 768) so all three modalities
+    # share the same sequence length for the fusion cat.
+    # All max_len positions are identical; the encoder's mean-pool recovers
+    # the original sentence vector exactly.
+    bert_feats = np.tile(bert_feats[:, np.newaxis, :], (1, max_len, 1))  # (N, max_len, 768)
 
     logger.info("Loading COVAREP …")
     covarep_cs  = _load_pkl(covarep_path)
