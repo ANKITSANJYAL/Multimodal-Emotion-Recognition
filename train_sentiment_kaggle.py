@@ -32,7 +32,7 @@ import pytorch_lightning as pl
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from pytorch_lightning.callbacks import EarlyStopping, LearningRateMonitor, ModelCheckpoint
+from pytorch_lightning.callbacks import EarlyStopping, ModelCheckpoint
 from torch.utils.data import DataLoader, Dataset
 from torchmetrics.regression import PearsonCorrCoef, MeanAbsoluteError
 
@@ -598,15 +598,13 @@ def run_sentiment_experiment(task: str = "7class") -> dict:
         monitor="val_bal_acc", mode="max",
         patience=cfg["patience"],
     )
-    lr_cb = LearningRateMonitor(logging_interval="epoch")
-
     trainer = pl.Trainer(
         max_epochs=cfg["epochs"],
         accelerator="gpu",
         devices=cfg["devices"],
         precision=cfg["precision"],
         gradient_clip_val=cfg["gradient_clip_val"],
-        callbacks=[ckpt_cb, early_cb, lr_cb],
+        callbacks=[ckpt_cb, early_cb],
         logger=False,
         enable_progress_bar=True,
         deterministic=False,
