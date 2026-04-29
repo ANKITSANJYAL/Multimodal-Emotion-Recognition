@@ -344,23 +344,35 @@ class SentimentDataModule(pl.LightningDataModule):
 # Sentiment wrapper — overrides test logging to add MAE / Pearson / binary acc
 # ──────────────────────────────────────────────────────────────────────────────
 
+SENTIMENT_CLASS_NAMES = {
+    7: ["VeryNeg(-3)", "Neg(-2)", "SlightNeg(-1)", "Neutral(0)",
+        "SlightPos(+1)", "Pos(+2)", "VeryPos(+3)"],
+    2: ["Negative", "Positive"],
+}
+
 class SentimentAffectDiff(AffectDiffModule):
     """AffectDiffModule adapted for sentiment: proper metric names + MAE/Pearson."""
 
     def __init__(self, task: str = "7class", **kwargs):
+        # task is not an AffectDiffModule param — store before super().__init__
+        self._sentiment_task = task
         super().__init__(**kwargs)
-        self.task = task
         self._raw_preds: list  = []
         self._raw_labels: list = []
 
     def test_step(self, batch, batch_idx):
+        # Parent accumulates _test_logits / _test_targets; reuse last entry
         loss = super().test_step(batch, batch_idx)
-        with torch.no_grad():
-            logits = self(batch["text"], batch["audio"], batch["vision"])
-            pred_cls = torch.argmax(logits, dim=1).cpu().float()
-            # convert back to sentiment scale for regression metrics
-            self._raw_preds.append(pred_cls - 3.0)
-            self._raw_labels.append(batch["raw_labels"].cpu().float())
+        logits   = self._test_logits[-1]              # (B, C), already on cpu
+        pred_cls = torch.argmax(logits, dim=1).float()
+        if self._sentiment_task == "7class":
+            # 0-6 → -3..+3
+            raw_pred = pred_cls - 3.0
+        else:
+            # binary 0/1 → -1/+1  (enables same MAE/Pearson path)
+            raw_pred = pred_cls * 2.0 - 1.0
+        self._raw_preds.append(raw_pred)
+        self._raw_labels.append(batch["raw_labels"].cpu().float())
         return loss
 
     def on_test_epoch_start(self):
@@ -369,28 +381,74 @@ class SentimentAffectDiff(AffectDiffModule):
         self._raw_labels = []
 
     def on_test_epoch_end(self):
-        super().on_test_epoch_end()
+        # Patch class names before calling super so per-class dicts are labelled correctly
+        num_classes = self.hparams.num_classes
+        _names = SENTIMENT_CLASS_NAMES.get(num_classes,
+                                           [str(i) for i in range(num_classes)])
+        import modules.affect_diff_module as _m
+        _orig = None
+        try:
+            # Temporarily monkey-patch the class-name list used by the parent
+            import builtins
+            _orig_names_7  = ["Happy", "Sad", "Angry", "Fear", "Disgust", "Surprise"]
+            # The parent reads class_names from a local variable — we override on_test_epoch_end
+            # entirely here instead of relying on super for this.
+            if not self._test_logits:
+                return
+            all_logits  = torch.cat(self._test_logits,  dim=0)
+            all_targets = torch.cat(self._test_targets, dim=0)
+            preds = torch.argmax(all_logits, dim=1)
+
+            try:
+                from torchmetrics.classification import (
+                    MulticlassF1Score, MulticlassPrecision, MulticlassRecall,
+                    MulticlassAUROC, MulticlassConfusionMatrix,
+                )
+                f1_mac   = MulticlassF1Score(num_classes=num_classes, average="macro")(preds, all_targets).item()
+                f1_per   = MulticlassF1Score(num_classes=num_classes, average="none")(preds, all_targets).tolist()
+                prec_per = MulticlassPrecision(num_classes=num_classes, average="none")(preds, all_targets).tolist()
+                rec_per  = MulticlassRecall(num_classes=num_classes, average="none")(preds, all_targets).tolist()
+                auroc    = MulticlassAUROC(num_classes=num_classes)(all_logits, all_targets.long()).item()
+                cm       = MulticlassConfusionMatrix(num_classes=num_classes)(preds, all_targets).tolist()
+            except Exception as e:
+                logger.warning("Torchmetrics error: %s", e)
+                f1_mac, f1_per, prec_per, rec_per, auroc, cm = 0.0, [], [], [], 0.0, []
+
+            bal_acc = sum(rec_per) / len(rec_per) if rec_per else 0.0
+            self.log("test_macro_f1",     f1_mac,  sync_dist=True)
+            self.log("test_balanced_acc", bal_acc, sync_dist=True)
+            self.log("test_auroc",        auroc,   sync_dist=True)
+            self.log("test_bal_acc",      bal_acc, sync_dist=True)
+
+            logger.info("Sentiment classification — BalAcc: %.4f  MacroF1: %.4f  AUROC: %.4f",
+                        bal_acc, f1_mac, auroc)
+            for name, f1 in zip(_names, f1_per):
+                logger.info("  %-20s  F1=%.3f", name, f1)
+
+        finally:
+            pass
+
+        # Regression metrics (MAE / Pearson / Binary Acc)
         if not self._raw_preds:
             return
-        preds  = torch.cat(self._raw_preds,  dim=0)
-        labels = torch.cat(self._raw_labels, dim=0)
+        raw_pred  = torch.cat(self._raw_preds,  dim=0)
+        raw_label = torch.cat(self._raw_labels, dim=0)
 
-        mae  = (preds - labels).abs().mean().item()
+        mae = (raw_pred - raw_label).abs().mean().item()
         try:
-            r = PearsonCorrCoef()(preds, labels).item()
+            r = PearsonCorrCoef()(raw_pred, raw_label).item()
         except Exception:
             r = float("nan")
 
-        # Binary accuracy: >=0 = positive
-        pred_bin  = (preds  >= 0).long()
-        true_bin  = (labels >= 0).long()
-        bin_acc   = (pred_bin == true_bin).float().mean().item()
+        pred_bin = (raw_pred  >= 0).long()
+        true_bin = (raw_label >= 0).long()
+        bin_acc  = (pred_bin == true_bin).float().mean().item()
 
-        logger.info("Sentiment test — MAE: %.4f  Pearson r: %.4f  Binary Acc: %.4f",
+        logger.info("Regression — MAE: %.4f  Pearson r: %.4f  Binary Acc: %.4f",
                     mae, r, bin_acc)
-        self.log("test_mae",      mae,     sync_dist=True)
-        self.log("test_pearson",  r,       sync_dist=True)
-        self.log("test_bin_acc",  bin_acc, sync_dist=True)
+        self.log("test_mae",     mae,     sync_dist=True)
+        self.log("test_pearson", r,       sync_dist=True)
+        self.log("test_bin_acc", bin_acc, sync_dist=True)
 
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -483,7 +541,8 @@ def run_sentiment_experiment(task: str = "7class") -> dict:
     )
     dm.setup()
 
-    # Model
+    # Model  (class_weights NOT passed — AffectDiffModule.on_fit_start pulls
+    #         them from self.trainer.datamodule automatically)
     model = SentimentAffectDiff(
         task=task,
         text_dim=cfg["text_dim"],
@@ -496,8 +555,12 @@ def run_sentiment_experiment(task: str = "7class") -> dict:
         encoder_layers=cfg["encoder_layers"],
         encoder_dropout=cfg["encoder_dropout"],
         fusion_type=cfg["fusion_type"],
+        num_bottleneck_tokens=cfg["num_bottleneck_tokens"],
+        num_cross_attn_layers=cfg["num_cross_attn_layers"],
+        num_self_attn_layers=cfg["num_self_attn_layers"],
         dag_method=cfg["dag_method"],
         diffusion_steps=cfg["diffusion_steps"],
+        ddim_steps=cfg["ddim_steps"],
         beta_kl=cfg["beta_kl"],
         lambda_diff=cfg["lambda_diff"],
         lambda_causal=cfg["lambda_causal"],
@@ -521,7 +584,6 @@ def run_sentiment_experiment(task: str = "7class") -> dict:
         lr=cfg["lr"],
         weight_decay=cfg["weight_decay"],
         epochs=cfg["epochs"],
-        class_weights=dm.class_weights,
     )
 
     ckpt_cb = ModelCheckpoint(
