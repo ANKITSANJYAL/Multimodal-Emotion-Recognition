@@ -544,8 +544,8 @@ def run_sentiment_experiment(task: str = "7class") -> dict:
 
     # Detect GPUs — use all available with DDP
     n_gpus   = max(torch.cuda.device_count(), 1)
-    strategy = "ddp" if n_gpus > 1 else "auto"
-    workers  = min(4 * n_gpus, 8)
+    strategy = "ddp_find_unused_parameters_true" if n_gpus > 1 else "auto"
+    workers  = min(2 * n_gpus, 4)
     logger.info("GPUs detected: %d  strategy=%s", n_gpus, strategy)
 
     # Data
@@ -901,8 +901,8 @@ def run_finetune_experiment(source_task: str = "7class") -> dict:
     os.makedirs(FINETUNE_CKPT_DIR, exist_ok=True)
 
     n_gpus   = max(torch.cuda.device_count(), 1)
-    strategy = "ddp" if n_gpus > 1 else "auto"
-    workers  = min(4 * n_gpus, 8)
+    strategy = "ddp_find_unused_parameters_true" if n_gpus > 1 else "auto"
+    workers  = min(2 * n_gpus, 4)
     logger.info("=" * 60)
     logger.info("Fine-tune: Sentiment_%s → 6-class emotion | GPUs=%d strategy=%s",
                 source_task, n_gpus, strategy)
