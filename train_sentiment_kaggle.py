@@ -53,7 +53,7 @@ logger = logging.getLogger(__name__)
 
 DATA_DIR        = Path("/kaggle/input/datasets/ankit58/mosei-sentiment")
 BERT_PATH       = DATA_DIR / "BERT_MOSEI.pkl"
-COVAREP_PATH    = DATA_DIR / "COVAREP_aligned_MOSEI.pkl"
+COVAREP_PATH    = Path("/kaggle/input/datasets/ankit58/mosei-sentiment/COAVAREP_aligned_MOSEI.pkl")
 FACET_PATH      = DATA_DIR / "FACET_aligned_MOSEI.pkl"
 # No combined file — always load from separate modality files
 COMBINED_PATH   = None
