@@ -123,11 +123,51 @@ def _to_tensor(x, dtype=torch.float32) -> torch.Tensor:
 
 def _pad_or_truncate(seq: np.ndarray, max_len: int) -> np.ndarray:
     """Ensure (L, D) → (max_len, D) via padding or truncation."""
+    if seq.ndim == 1:
+        seq = seq[np.newaxis, :]  # handle (D,) edge case
     L, D = seq.shape
     if L >= max_len:
         return seq[:max_len]
     pad = np.zeros((max_len - L, D), dtype=seq.dtype)
     return np.concatenate([seq, pad], axis=0)
+
+def _discretize(raw: np.ndarray, task: str) -> np.ndarray:
+    if task == "7class":
+        return to_7class(raw)
+    elif task == "binary":
+        return to_binary(raw)
+    else:
+        raise ValueError(f"Unknown task: {task}")
+
+
+def _extract_cs_features(cs: Any, max_len: int) -> np.ndarray:
+    """
+    Extract (N, max_len, D) array from a CMU-SDK computational_sequence.
+    Iterates .data in sorted segment-ID order for reproducible alignment
+    with the BERT flat-index array.
+    """
+    # Get the underlying data dict
+    if hasattr(cs, 'data'):
+        data_dict = cs.data
+    elif isinstance(cs, dict):
+        data_dict = cs
+    else:
+        raise ValueError(f"Cannot read computational_sequence: {type(cs)}")
+
+    seg_ids = sorted(data_dict.keys())
+    feats = []
+    for sid in seg_ids:
+        entry = data_dict[sid]
+        if isinstance(entry, dict) and 'features' in entry:
+            f = np.array(entry['features'], dtype=np.float32)
+        elif hasattr(entry, 'features'):
+            f = np.array(entry.features, dtype=np.float32)
+        else:
+            f = np.array(entry, dtype=np.float32)
+        feats.append(_pad_or_truncate(f, max_len))
+
+    return np.stack(feats, axis=0)   # (N, max_len, D)
+
 
 def load_mosei_sentiment(
     bert_path: Path,
@@ -138,128 +178,68 @@ def load_mosei_sentiment(
     task: str = "7class",
 ) -> Dict[str, Dict[str, torch.Tensor]]:
     """
-    Load CMU-MOSEI sentiment data from the standard pickle format.
+    Load CMU-MOSEI sentiment from the actual file format:
+      BERT_MOSEI.pkl         → {'Data': Tensor(N,768), 'level': Tensor(N)}
+      COVAREP_aligned_MOSEI.pkl → computational_sequence (CMU-SDK)
+      FACET_aligned_MOSEI.pkl   → computational_sequence (CMU-SDK)
 
-    Supports three common layouts:
-      1. Single combined pickle: {split: {text, audio, vision, labels}}
-      2. Separate modality pickles with same split structure
-      3. CMU-SDK format: {split: {seg_id: {features: ..., labels: ...}}}
-
-    Returns dict: {split: {text, audio, vision, labels, raw_labels}}
-      - labels     : long tensor for classification (0-6 for 7class, 0-1 for binary)
-      - raw_labels : float tensor of raw sentiment values for MAE/Pearson
+    BERT contains labels ('level') and is flat — no temporal dim.
+    Text is unsqueezed to (N, 1, 768) so the model's .mean(dim=1) collapses it.
+    COVAREP/FACET are extracted in sorted segment-ID order to align with BERT.
+    A reproducible 70/15/15 split is created with seed 42.
     """
-    # ── Try combined file first ──────────────────────────────────────────────
-    if combined_path and combined_path.exists():
-        logger.info("Loading combined file: %s", combined_path)
-        data = _load_pkl(combined_path)
-        return _parse_combined(data, max_len, task)
+    logger.info("Loading BERT …")
+    bert_raw  = _load_pkl(bert_path)
+    # Handle both Tensor and ndarray
+    bert_feats = np.array(bert_raw['Data'], dtype=np.float32)   # (N, 768)
+    raw_labels = np.array(bert_raw['level'], dtype=np.float32)  # (N,)
+    N = len(raw_labels)
+    logger.info("  BERT: %d samples, dim=%d", N, bert_feats.shape[1])
 
-    # ── Separate modality files ──────────────────────────────────────────────
-    logger.info("Loading separate modality files …")
-    bert    = _load_pkl(bert_path)
-    covarep = _load_pkl(covarep_path)
-    facet   = _load_pkl(facet_path)
-    return _merge_modalities(bert, covarep, facet, max_len, task)
+    # Unsqueeze text to (N, 1, 768) — compatible with model's (B, L, D) input
+    bert_feats = bert_feats[:, np.newaxis, :]  # (N, 1, 768)
 
+    logger.info("Loading COVAREP …")
+    covarep_cs  = _load_pkl(covarep_path)
+    covarep_arr = _extract_cs_features(covarep_cs, max_len)  # (N_cs, max_len, 74)
+    logger.info("  COVAREP: %d segs, shape=%s", len(covarep_arr), covarep_arr.shape)
 
-def _parse_combined(data: dict, max_len: int, task: str) -> dict:
-    """Parse {split: {text/audio/vision/labels}} format."""
+    logger.info("Loading FACET …")
+    facet_cs  = _load_pkl(facet_path)
+    facet_arr = _extract_cs_features(facet_cs, max_len)      # (N_f, max_len, 35)
+    logger.info("  FACET:   %d segs, shape=%s", len(facet_arr), facet_arr.shape)
+
+    # Align counts — use minimum to handle any off-by-one across files
+    N = min(N, len(covarep_arr), len(facet_arr))
+    bert_feats = bert_feats[:N]
+    raw_labels = raw_labels[:N]
+    covarep_arr = covarep_arr[:N]
+    facet_arr   = facet_arr[:N]
+    logger.info("Aligned to %d samples", N)
+
+    # 70 / 15 / 15 split (reproducible)
+    rng     = np.random.RandomState(42)
+    indices = rng.permutation(N)
+    t_end   = int(0.70 * N)
+    v_end   = int(0.85 * N)
+    splits  = {
+        "train": indices[:t_end],
+        "val":   indices[t_end:v_end],
+        "test":  indices[v_end:],
+    }
+
     out = {}
-    split_map = {"train": "train", "dev": "val", "valid": "val",
-                 "validation": "val", "test": "test"}
-    for raw_key, split in split_map.items():
-        if raw_key not in data:
-            continue
-        d = data[raw_key]
-        text   = _extract_modality(d, ["text", "bert", "bert_embeddings"], max_len)
-        audio  = _extract_modality(d, ["audio", "covarep"], max_len)
-        vision = _extract_modality(d, ["vision", "video", "facet"], max_len)
-        raw    = _extract_labels(d)
-        labels = _discretize(raw, task)
-        out[split] = {
-            "text":       _to_tensor(text),
-            "audio":      _to_tensor(audio),
-            "vision":     _to_tensor(vision),
-            "labels":     torch.tensor(labels, dtype=torch.long),
-            "raw_labels": torch.tensor(raw, dtype=torch.float32),
+    for name, idx in splits.items():
+        labels_cls = _discretize(raw_labels[idx], task)
+        out[name] = {
+            "text":       torch.tensor(bert_feats[idx],   dtype=torch.float32),
+            "audio":      torch.tensor(covarep_arr[idx],  dtype=torch.float32),
+            "vision":     torch.tensor(facet_arr[idx],    dtype=torch.float32),
+            "labels":     torch.tensor(labels_cls,        dtype=torch.long),
+            "raw_labels": torch.tensor(raw_labels[idx],   dtype=torch.float32),
         }
-        logger.info("  %s: %d samples", split, len(labels))
+        logger.info("  %s: %d samples", name, len(idx))
     return out
-
-
-def _merge_modalities(bert, covarep, facet, max_len, task) -> dict:
-    """Merge three separate modality dicts into a combined split dict."""
-    out = {}
-    split_map = {"train": "train", "dev": "val", "valid": "val", "test": "test"}
-    for raw_key, split in split_map.items():
-        if raw_key not in bert:
-            continue
-        b = bert[raw_key]
-        c = covarep[raw_key]
-        f = facet[raw_key]
-        text   = _extract_modality(b, ["text", "features", "data"], max_len)
-        audio  = _extract_modality(c, ["audio", "features", "data"], max_len)
-        vision = _extract_modality(f, ["vision", "features", "data"], max_len)
-        raw    = _extract_labels(b)
-        labels = _discretize(raw, task)
-        out[split] = {
-            "text":       _to_tensor(text),
-            "audio":      _to_tensor(audio),
-            "vision":     _to_tensor(vision),
-            "labels":     torch.tensor(labels, dtype=torch.long),
-            "raw_labels": torch.tensor(raw, dtype=torch.float32),
-        }
-        logger.info("  %s: %d samples", split, len(labels))
-    return out
-
-
-def _extract_modality(d: Any, keys: List[str], max_len: int) -> np.ndarray:
-    """Try multiple key names; handle (N,L,D) or SDK dict-of-dicts format."""
-    if isinstance(d, dict):
-        for k in keys:
-            if k in d:
-                arr = np.array(d[k])
-                if arr.ndim == 3:
-                    return np.stack([_pad_or_truncate(arr[i], max_len)
-                                     for i in range(len(arr))])
-                return arr
-        # SDK format: dict of seg_id → {features: arr}
-        segs = []
-        for seg_id, seg_data in d.items():
-            if isinstance(seg_data, dict) and "features" in seg_data:
-                feats = np.array(seg_data["features"])
-                if feats.ndim == 2:
-                    segs.append(_pad_or_truncate(feats, max_len))
-        if segs:
-            return np.stack(segs)
-    raise ValueError(f"Cannot parse modality — tried keys {keys}")
-
-
-def _extract_labels(d: Any) -> np.ndarray:
-    """Extract raw regression labels from various formats."""
-    for k in ["labels", "label", "sentiment", "y"]:
-        if isinstance(d, dict) and k in d:
-            arr = np.array(d[k]).squeeze()
-            return arr.astype(np.float32)
-    # SDK: labels in each segment
-    if isinstance(d, dict):
-        vals = []
-        for seg_id, seg_data in d.items():
-            if isinstance(seg_data, dict) and "labels" in seg_data:
-                vals.append(float(np.array(seg_data["labels"]).squeeze()))
-        if vals:
-            return np.array(vals, dtype=np.float32)
-    raise ValueError("Cannot extract labels")
-
-
-def _discretize(raw: np.ndarray, task: str) -> np.ndarray:
-    if task == "7class":
-        return to_7class(raw)
-    elif task == "binary":
-        return to_binary(raw)
-    else:
-        raise ValueError(f"Unknown task: {task}")
 
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -331,21 +311,21 @@ class SentimentDataModule(pl.LightningDataModule):
             std  = t.std(dim=(0, 1), keepdim=True).clamp(min=1e-6)
             return mean, std
 
-        def _apply(ds, stats):
-            for key, mean, std in stats:
+        # Compute stats only from training set
+        stat_map = {}
+        for key in ("text", "audio", "vision"):
+            t = getattr(self.train_dataset, key).float()
+            mean = t.mean(dim=0, keepdim=True)           # (1, L, D) or (1, D)
+            std  = t.std(dim=0,  keepdim=True).clamp(min=1e-6)
+            stat_map[key] = (mean, std)
+
+        for ds in [self.train_dataset, self.val_dataset, self.test_dataset]:
+            for key, (mean, std) in stat_map.items():
                 arr = getattr(ds, key).float()
                 arr = torch.clamp(torch.nan_to_num(
                     (arr - mean) / std, nan=0.0, posinf=0.0, neginf=0.0),
                     min=-10.0, max=10.0)
                 setattr(ds, key, arr)
-
-        stats = [
-            ("text",   *_stats(self.train_dataset.text.float())),
-            ("audio",  *_stats(self.train_dataset.audio.float())),
-            ("vision", *_stats(self.train_dataset.vision.float())),
-        ]
-        for ds in [self.train_dataset, self.val_dataset, self.test_dataset]:
-            _apply(ds, stats)
 
     def train_dataloader(self):
         return DataLoader(self.train_dataset, batch_size=self.batch_size,
