@@ -51,12 +51,12 @@ logger = logging.getLogger(__name__)
 # Paths — adjust to wherever you upload the files on Kaggle
 # ──────────────────────────────────────────────────────────────────────────────
 
-DATA_DIR        = Path("/kaggle/input/mosei-sentiment")   # dataset you create
-BERT_PATH       = DATA_DIR / "bert_embeddings.pkl"
-COVAREP_PATH    = DATA_DIR / "covarep.pkl"
-FACET_PATH      = DATA_DIR / "facet.pkl"
-# Fallback: combined single pickle (try this first)
-COMBINED_PATH   = DATA_DIR / "mosei_sentiment.pkl"
+DATA_DIR        = Path("/kaggle/input/mosei-sentiment")
+BERT_PATH       = DATA_DIR / "BERT_MOSEI.pkl"
+COVAREP_PATH    = DATA_DIR / "COVAREP_aligned_MOSEI.pkl"
+FACET_PATH      = DATA_DIR / "FACET_aligned_MOSEI.pkl"
+# No combined file — always load from separate modality files
+COMBINED_PATH   = None
 
 CKPT_DIR        = "/kaggle/working/sentiment_ckpts"
 RESULTS_JSON    = "/kaggle/working/sentiment_results.json"
@@ -86,6 +86,35 @@ def class_to_sentiment(cls: np.ndarray) -> np.ndarray:
 def _load_pkl(path: Path) -> Any:
     with open(path, "rb") as f:
         return pickle.load(f, encoding="latin1")
+
+
+def inspect_files():
+    """Print top-level structure of all three pkl files to identify keys/format."""
+    for name, path in [("BERT", BERT_PATH), ("COVAREP", COVAREP_PATH), ("FACET", FACET_PATH)]:
+        if not path.exists():
+            print(f"[{name}] NOT FOUND at {path}")
+            continue
+        d = _load_pkl(path)
+        print(f"\n{'='*60}")
+        print(f"[{name}]  type={type(d).__name__}")
+        if isinstance(d, dict):
+            print(f"  top-level keys: {list(d.keys())}")
+            for split_key in list(d.keys())[:3]:
+                v = d[split_key]
+                print(f"  split '{split_key}': type={type(v).__name__}", end="")
+                if isinstance(v, dict):
+                    print(f"  sub-keys={list(v.keys())}")
+                    for sk, sv in list(v.items())[:5]:
+                        arr = np.array(sv) if not isinstance(sv, (str, list)) else sv
+                        shape = arr.shape if hasattr(arr, 'shape') else (len(arr) if hasattr(arr, '__len__') else '?')
+                        print(f"    '{sk}': type={type(sv).__name__}  shape={shape}")
+                elif hasattr(v, 'shape'):
+                    print(f"  shape={v.shape}  dtype={v.dtype}")
+                else:
+                    print(f"  len={len(v) if hasattr(v,'__len__') else '?'}")
+        elif hasattr(d, 'shape'):
+            print(f"  shape={d.shape}  dtype={d.dtype}")
+        print()
 
 def _to_tensor(x, dtype=torch.float32) -> torch.Tensor:
     if isinstance(x, torch.Tensor):
@@ -605,7 +634,13 @@ if __name__ == "__main__":
     parser.add_argument("--task", choices=["7class", "binary", "both"],
                         default="both")
     parser.add_argument("--analyze", action="store_true")
+    parser.add_argument("--inspect", action="store_true",
+                        help="Print pkl file structure and exit (run this first)")
     args = parser.parse_args()
+
+    if args.inspect:
+        inspect_files()
+        sys.exit(0)
 
     if args.analyze:
         analyze_results()
