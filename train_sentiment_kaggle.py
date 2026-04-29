@@ -61,6 +61,12 @@ COMBINED_PATH   = None
 CKPT_DIR        = "/kaggle/working/sentiment_ckpts"
 RESULTS_JSON    = "/kaggle/working/sentiment_results.json"
 
+# ── Fine-tune paths (set EMOTION_CACHE_PATH to your uploaded .pt cache) ──────
+# Upload mosei_aligned_seq50_v2.pt from data/cache/ as a Kaggle dataset input.
+EMOTION_CACHE_PATH    = Path("/kaggle/input/datasets/ankit58/mosei-emotion/mosei_aligned_seq50_v2.pt")
+FINETUNE_CKPT_DIR     = "/kaggle/working/finetune_ckpts"
+FINETUNE_RESULTS_JSON = "/kaggle/working/finetune_results.json"
+
 
 # ──────────────────────────────────────────────────────────────────────────────
 # Label helpers
@@ -536,11 +542,17 @@ def run_sentiment_experiment(task: str = "7class") -> dict:
     logger.info("Starting: %s  (task=%s, num_classes=%d, text_dim=%d)",
                 exp_name, task, cfg["num_classes"], cfg["text_dim"])
 
+    # Detect GPUs — use all available with DDP
+    n_gpus   = max(torch.cuda.device_count(), 1)
+    strategy = "ddp" if n_gpus > 1 else "auto"
+    workers  = min(4 * n_gpus, 8)
+    logger.info("GPUs detected: %d  strategy=%s", n_gpus, strategy)
+
     # Data
     dm = SentimentDataModule(
         task=task,
         batch_size=cfg["batch_size"],
-        num_workers=cfg["num_workers"],
+        num_workers=workers,
     )
     dm.setup()
 
@@ -601,7 +613,8 @@ def run_sentiment_experiment(task: str = "7class") -> dict:
     trainer = pl.Trainer(
         max_epochs=cfg["epochs"],
         accelerator="gpu",
-        devices=cfg["devices"],
+        devices=n_gpus,
+        strategy=strategy,
         precision=cfg["precision"],
         gradient_clip_val=cfg["gradient_clip_val"],
         callbacks=[ckpt_cb, early_cb],
@@ -645,6 +658,379 @@ def run_sentiment_experiment(task: str = "7class") -> dict:
 
 
 # ──────────────────────────────────────────────────────────────────────────────
+# Fine-tune: emotion dataset + checkpoint adapter + experiment runner
+# ──────────────────────────────────────────────────────────────────────────────
+
+class EmotionDataset(Dataset):
+    """Dataset for the emotion .pt cache (no raw_labels — no regression metrics)."""
+    def __init__(self, d: dict) -> None:
+        self.text   = d["text"]
+        self.audio  = d["audio"]
+        self.vision = d["vision"]
+        self.labels = d["labels"]
+
+    def __len__(self):
+        return self.labels.shape[0]
+
+    def __getitem__(self, idx):
+        return {
+            "text":   self.text[idx],
+            "audio":  self.audio[idx],
+            "vision": self.vision[idx],
+            "labels": self.labels[idx],
+        }
+
+
+class EmotionFinetuneDataModule(pl.LightningDataModule):
+    """Load the pre-built mosei_aligned_seq50_v2.pt cache for emotion fine-tuning.
+
+    Replicates MoseiDataModule.setup() logic: identical 70/15/15 seed-42 split,
+    train-stats-only Z-normalization.  Exposes class_weights for on_fit_start.
+    """
+
+    def __init__(
+        self,
+        cache_path: Path,
+        batch_size: int = 32,
+        num_workers: int = 2,
+    ) -> None:
+        super().__init__()
+        self.cache_path  = Path(cache_path)
+        self.batch_size  = batch_size
+        self.num_workers = num_workers
+        self.class_weights: Optional[torch.Tensor] = None
+
+    def setup(self, stage: Optional[str] = None) -> None:
+        logger.info("Loading emotion cache: %s", self.cache_path)
+        data = torch.load(self.cache_path, map_location="cpu", weights_only=False)
+        N = data["labels"].shape[0]
+        logger.info("  Total samples: %d", N)
+
+        rng     = torch.Generator()
+        rng.manual_seed(42)
+        indices = torch.randperm(N, generator=rng).tolist()
+        t_end   = int(0.70 * N)
+        v_end   = int(0.85 * N)
+
+        def _slice(idx):
+            return {k: v[idx] for k, v in data.items()}
+
+        train_raw = _slice(indices[:t_end])
+
+        # Z-normalize from training stats only
+        stats: dict = {}
+        for key in ("text", "audio", "vision"):
+            t    = train_raw[key].float()
+            mean = t.mean(dim=0, keepdim=True)
+            std  = t.std(dim=0,  keepdim=True).clamp(min=1e-6)
+            stats[key] = (mean, std)
+
+        def _norm(d):
+            d = {k: v.clone() for k, v in d.items()}
+            for key, (mean, std) in stats.items():
+                arr = d[key].float()
+                arr = torch.clamp(
+                    torch.nan_to_num((arr - mean) / std,
+                                     nan=0.0, posinf=0.0, neginf=0.0),
+                    min=-10.0, max=10.0,
+                )
+                d[key] = arr
+            return d
+
+        self.train_dataset = EmotionDataset(_norm(_slice(indices[:t_end])))
+        self.val_dataset   = EmotionDataset(_norm(_slice(indices[t_end:v_end])))
+        self.test_dataset  = EmotionDataset(_norm(_slice(indices[v_end:])))
+
+        labels   = self.train_dataset.labels
+        num_cls  = int(labels.max().item()) + 1
+        counts   = torch.bincount(labels, minlength=num_cls).float().clamp(min=1)
+        inv_sqrt = 1.0 / counts.sqrt()
+        self.class_weights = (inv_sqrt / inv_sqrt.min()).float()
+
+        logger.info(
+            "Emotion split — train: %d  val: %d  test: %d",
+            len(self.train_dataset), len(self.val_dataset), len(self.test_dataset),
+        )
+
+    def train_dataloader(self):
+        return DataLoader(self.train_dataset, batch_size=self.batch_size,
+                          shuffle=True, num_workers=self.num_workers, pin_memory=True)
+
+    def val_dataloader(self):
+        return DataLoader(self.val_dataset, batch_size=self.batch_size,
+                          shuffle=False, num_workers=self.num_workers, pin_memory=True)
+
+    def test_dataloader(self):
+        return DataLoader(self.test_dataset, batch_size=self.batch_size,
+                          shuffle=False, num_workers=self.num_workers, pin_memory=True)
+
+
+def adapt_checkpoint(
+    ckpt_path: str,
+    *,
+    source_text_dim: int,
+    target_text_dim: int,
+    source_num_classes: int,
+    target_num_classes: int,
+    hidden_dim: int,
+    latent_dim: int,
+) -> dict:
+    """Load a sentiment checkpoint and surgically replace incompatible layers.
+
+    Two layers change when moving sentiment (BERT 768) → emotion (GloVe 300):
+      • bottleneck.text_enc.input_proj.0  — Linear(text_dim → hidden_dim)
+      • classifier.8                      — Linear(latent_dim//2 → num_classes)
+
+    Everything else (audio/video encoders, VAE, causal graph, diffusion U-Net)
+    is kept exactly — those parameters transfer across tasks unchanged.
+    """
+    logger.info("Loading checkpoint for adaptation: %s", ckpt_path)
+    raw = torch.load(ckpt_path, map_location="cpu", weights_only=False)
+    state = raw.get("state_dict", raw)
+
+    new_state: dict = {}
+    replaced: list  = []
+
+    text_key = "bottleneck.text_enc.input_proj.0"
+    cls_key  = "classifier.8"
+
+    for k, v in state.items():
+        if k.startswith(text_key) and source_text_dim != target_text_dim:
+            if k.endswith(".weight"):
+                new_state[k] = torch.nn.init.kaiming_uniform_(
+                    torch.empty(hidden_dim, target_text_dim)
+                )
+            else:  # .bias
+                new_state[k] = torch.zeros(hidden_dim)
+            replaced.append(k)
+
+        elif k.startswith(cls_key) and source_num_classes != target_num_classes:
+            if k.endswith(".weight"):
+                new_state[k] = torch.nn.init.xavier_uniform_(
+                    torch.empty(target_num_classes, latent_dim // 2)
+                )
+            else:  # .bias
+                new_state[k] = torch.zeros(target_num_classes)
+            replaced.append(k)
+
+        else:
+            new_state[k] = v
+
+    logger.info(
+        "Adapted %d tensors: %s", len(replaced),
+        "  ".join(replaced) if replaced else "(none — dims matched)",
+    )
+    return new_state
+
+
+def make_finetune_cfg(source_task: str = "7class") -> dict:
+    return {
+        "batch_size":  32,
+        "num_workers": 2,
+        "text_dim":    300,    # GloVe — emotion dataset
+        "audio_dim":   74,
+        "video_dim":   35,
+        "hidden_dim":  128,
+        "latent_dim":  128,
+        "num_classes": 6,
+        "encoder_type":   "legacy",
+        "encoder_layers": 2,
+        "encoder_dropout": 0.3,
+        "fusion_type":    "concat",
+        "dag_method":     "notears",
+        "num_bottleneck_tokens": 20,
+        "num_cross_attn_layers": 1,
+        "num_self_attn_layers":  1,
+        "diffusion_steps": 1000,
+        "ddim_steps":      50,
+        "beta_kl":        0.1,
+        "lambda_diff":    0.05,
+        "lambda_causal":  0.05,
+        "lambda_recon":   0.5,
+        "cfg_scale":      3.0,
+        "ema_decay":      0.999,
+        "label_smoothing": 0.1,
+        "free_bits":       0.0,
+        "use_reconstruction": False,
+        "use_diffusion":      True,
+        "use_causal_graph":   True,
+        "use_augmentation":   True,
+        "use_beta_tc_vae":    False,
+        "use_focal_loss":     True,
+        "focal_gamma":        2.0,
+        "use_vae":            True,
+        "use_stop_gradient":  True,
+        "use_cfg":            True,
+        "use_causal_diffusion_cond": True,
+        "use_kl_warmup":      True,
+        "lr":           1e-4,   # lower LR for fine-tuning
+        "weight_decay": 1e-4,
+        "epochs":       40,
+        "patience":     12,
+        "precision":    "16-mixed",
+        "gradient_clip_val": 1.0,
+        "seed":         42,
+        "experiment_name": f"Finetune_{source_task}_to_Emotion",
+    }
+
+
+def run_finetune_experiment(source_task: str = "7class") -> dict:
+    """Fine-tune the best sentiment checkpoint on the 6-class emotion task.
+
+    Hypothesis: pre-training on 22 K sentiment samples transfers to emotion
+    recognition even though the text modality changes (BERT 768 → GloVe 300).
+    The audio/video encoders, causal graph, VAE, and diffusion prior all
+    carry over without modification.
+    """
+    cfg      = make_finetune_cfg(source_task)
+    exp_name = cfg["experiment_name"]
+    source_ckpt = f"{CKPT_DIR}/Sentiment_{source_task}/best.ckpt"
+
+    if not Path(source_ckpt).exists():
+        raise FileNotFoundError(
+            f"Sentiment checkpoint not found: {source_ckpt}\n"
+            f"Run --task {source_task} first, then --finetune."
+        )
+    if not EMOTION_CACHE_PATH.exists():
+        raise FileNotFoundError(
+            f"Emotion cache not found: {EMOTION_CACHE_PATH}\n"
+            "Upload mosei_aligned_seq50_v2.pt as a Kaggle dataset input."
+        )
+
+    pl.seed_everything(cfg["seed"], workers=True)
+    os.makedirs(FINETUNE_CKPT_DIR, exist_ok=True)
+
+    n_gpus   = max(torch.cuda.device_count(), 1)
+    strategy = "ddp" if n_gpus > 1 else "auto"
+    workers  = min(4 * n_gpus, 8)
+    logger.info("=" * 60)
+    logger.info("Fine-tune: Sentiment_%s → 6-class emotion | GPUs=%d strategy=%s",
+                source_task, n_gpus, strategy)
+
+    dm = EmotionFinetuneDataModule(
+        cache_path=EMOTION_CACHE_PATH,
+        batch_size=cfg["batch_size"],
+        num_workers=workers,
+    )
+    dm.setup()
+
+    # Adapt checkpoint: swap text projection + classifier head
+    source_num_classes = 7 if source_task == "7class" else 2
+    adapted_state = adapt_checkpoint(
+        source_ckpt,
+        source_text_dim=768,
+        target_text_dim=cfg["text_dim"],
+        source_num_classes=source_num_classes,
+        target_num_classes=cfg["num_classes"],
+        hidden_dim=cfg["hidden_dim"],
+        latent_dim=cfg["latent_dim"],
+    )
+
+    # Build model (identical arch, emotion dims)
+    model = AffectDiffModule(
+        text_dim=cfg["text_dim"],
+        audio_dim=cfg["audio_dim"],
+        video_dim=cfg["video_dim"],
+        hidden_dim=cfg["hidden_dim"],
+        latent_dim=cfg["latent_dim"],
+        num_classes=cfg["num_classes"],
+        encoder_type=cfg["encoder_type"],
+        encoder_layers=cfg["encoder_layers"],
+        encoder_dropout=cfg["encoder_dropout"],
+        fusion_type=cfg["fusion_type"],
+        num_bottleneck_tokens=cfg["num_bottleneck_tokens"],
+        num_cross_attn_layers=cfg["num_cross_attn_layers"],
+        num_self_attn_layers=cfg["num_self_attn_layers"],
+        dag_method=cfg["dag_method"],
+        diffusion_steps=cfg["diffusion_steps"],
+        ddim_steps=cfg["ddim_steps"],
+        beta_kl=cfg["beta_kl"],
+        lambda_diff=cfg["lambda_diff"],
+        lambda_causal=cfg["lambda_causal"],
+        lambda_recon=cfg["lambda_recon"],
+        cfg_scale=cfg["cfg_scale"],
+        ema_decay=cfg["ema_decay"],
+        label_smoothing=cfg["label_smoothing"],
+        free_bits=cfg["free_bits"],
+        use_reconstruction=cfg["use_reconstruction"],
+        use_diffusion=cfg["use_diffusion"],
+        use_causal_graph=cfg["use_causal_graph"],
+        use_augmentation=cfg["use_augmentation"],
+        use_beta_tc_vae=cfg["use_beta_tc_vae"],
+        use_focal_loss=cfg["use_focal_loss"],
+        focal_gamma=cfg["focal_gamma"],
+        use_vae=cfg["use_vae"],
+        use_stop_gradient=cfg["use_stop_gradient"],
+        use_cfg=cfg["use_cfg"],
+        use_causal_diffusion_cond=cfg["use_causal_diffusion_cond"],
+        use_kl_warmup=cfg["use_kl_warmup"],
+        lr=cfg["lr"],
+        weight_decay=cfg["weight_decay"],
+        epochs=cfg["epochs"],
+    )
+    # Load adapted weights (strict=False handles any remaining minor mismatches)
+    missing, unexpected = model.load_state_dict(adapted_state, strict=False)
+    if missing:
+        logger.info("Missing keys (will be randomly initialized): %s", missing)
+    if unexpected:
+        logger.info("Unexpected keys (ignored): %s", unexpected)
+
+    ckpt_cb = ModelCheckpoint(
+        dirpath=f"{FINETUNE_CKPT_DIR}/{exp_name}",
+        monitor="val_bal_acc", mode="max",
+        save_top_k=1, filename="best",
+    )
+    early_cb = EarlyStopping(
+        monitor="val_bal_acc", mode="max",
+        patience=cfg["patience"],
+    )
+    trainer = pl.Trainer(
+        max_epochs=cfg["epochs"],
+        accelerator="gpu",
+        devices=n_gpus,
+        strategy=strategy,
+        precision=cfg["precision"],
+        gradient_clip_val=cfg["gradient_clip_val"],
+        callbacks=[ckpt_cb, early_cb],
+        logger=False,
+        enable_progress_bar=True,
+        deterministic=False,
+    )
+
+    t0 = time.time()
+    trainer.fit(model, datamodule=dm)
+    train_time = time.time() - t0
+
+    logger.info("Loading best fine-tune checkpoint: %s", ckpt_cb.best_model_path)
+    best = AffectDiffModule.load_from_checkpoint(
+        ckpt_cb.best_model_path, strict=False
+    )
+    test_results = trainer.test(best, datamodule=dm, verbose=True)
+
+    result = {
+        "experiment":        exp_name,
+        "source_task":       source_task,
+        "target_task":       "emotion_6class",
+        "pretrain_samples":  22860,
+        "finetune_samples":  len(dm.train_dataset),
+        "best_val_bal_acc":  float(ckpt_cb.best_model_score or 0),
+        "train_time_s":      round(train_time, 1),
+        "test":              test_results[0] if test_results else {},
+    }
+    logger.info("Fine-tune result: %s", json.dumps(result, indent=2))
+
+    results = []
+    if Path(FINETUNE_RESULTS_JSON).exists():
+        with open(FINETUNE_RESULTS_JSON) as f:
+            results = json.load(f)
+    results.append(result)
+    with open(FINETUNE_RESULTS_JSON, "w") as f:
+        json.dump(results, f, indent=2)
+    logger.info("Saved → %s", FINETUNE_RESULTS_JSON)
+    return result
+
+
+# ──────────────────────────────────────────────────────────────────────────────
 # Analysis helper
 # ──────────────────────────────────────────────────────────────────────────────
 
@@ -673,12 +1059,21 @@ def analyze_results():
 # ──────────────────────────────────────────────────────────────────────────────
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser()
+    parser = argparse.ArgumentParser(
+        description="Affect-Diff sentiment training + emotion fine-tuning on Kaggle"
+    )
     parser.add_argument("--task", choices=["7class", "binary", "both"],
-                        default="both")
-    parser.add_argument("--analyze", action="store_true")
+                        default="both",
+                        help="Which sentiment task(s) to train (or which pretrained "
+                             "checkpoint(s) to fine-tune from when --finetune is set)")
+    parser.add_argument("--finetune", action="store_true",
+                        help="Fine-tune the best --task checkpoint(s) on CMU-MOSEI "
+                             "6-class emotion. Requires a prior --task run AND "
+                             "EMOTION_CACHE_PATH pointing to mosei_aligned_seq50_v2.pt")
+    parser.add_argument("--analyze", action="store_true",
+                        help="Print results table and exit")
     parser.add_argument("--inspect", action="store_true",
-                        help="Print pkl file structure and exit (run this first)")
+                        help="Print pkl file structure and exit (sentiment paths only)")
     args = parser.parse_args()
 
     if args.inspect:
@@ -689,6 +1084,27 @@ if __name__ == "__main__":
         analyze_results()
         sys.exit(0)
 
+    if args.finetune:
+        # Fine-tune from pre-trained sentiment checkpoint(s) → 6-class emotion
+        if args.task in ("7class", "both"):
+            run_finetune_experiment("7class")
+        if args.task in ("binary", "both"):
+            run_finetune_experiment("binary")
+        # Print fine-tune summary
+        if Path(FINETUNE_RESULTS_JSON).exists():
+            with open(FINETUNE_RESULTS_JSON) as f:
+                ft_results = json.load(f)
+            print(f"\n{'Experiment':<35} {'Val-BalAcc':>10} {'Test-BalAcc':>12} {'MacroF1':>9}")
+            print("-" * 72)
+            for r in ft_results:
+                t = r.get("test", {})
+                print(f"{r['experiment']:<35} "
+                      f"{r['best_val_bal_acc']:>10.4f} "
+                      f"{t.get('test_bal_acc', t.get('test_balanced_acc', 0)):>12.4f} "
+                      f"{t.get('test_macro_f1', 0):>9.4f}")
+        sys.exit(0)
+
+    # Default: train sentiment
     if args.task in ("7class", "both"):
         run_sentiment_experiment("7class")
 
