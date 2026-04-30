@@ -1,0 +1,3855 @@
+{
+  "Full_Model": {
+    "experiment_name": "Full_Model",
+    "config": {
+      "ckpt_dir": "/kaggle/working/ablation_ckpts",
+      "batch_size": 64,
+      "num_workers": 2,
+      "text_dim": 300,
+      "audio_dim": 74,
+      "video_dim": 35,
+      "hidden_dim": 128,
+      "latent_dim": 128,
+      "num_classes": 6,
+      "encoder_type": "legacy",
+      "encoder_layers": 2,
+      "encoder_dropout": 0.3,
+      "fusion_type": "concat",
+      "num_bottleneck_tokens": 20,
+      "num_cross_attn_layers": 1,
+      "num_self_attn_layers": 1,
+      "dag_method": "notears",
+      "diffusion_steps": 1000,
+      "ddim_steps": 50,
+      "beta_kl": 0.1,
+      "lambda_diff": 0.05,
+      "lambda_causal": 0.05,
+      "lambda_recon": 0.5,
+      "cfg_scale": 3.0,
+      "ema_decay": 0.999,
+      "label_smoothing": 0.1,
+      "free_bits": 0.0,
+      "use_reconstruction": false,
+      "use_diffusion": true,
+      "use_causal_graph": true,
+      "use_augmentation": true,
+      "use_beta_tc_vae": false,
+      "use_focal_loss": true,
+      "focal_gamma": 2.0,
+      "use_vae": true,
+      "use_stop_gradient": true,
+      "use_cfg": true,
+      "use_causal_diffusion_cond": true,
+      "use_kl_warmup": true,
+      "lr": 0.0005,
+      "weight_decay": 0.0001,
+      "epochs": 100,
+      "patience": 35,
+      "precision": "16-mixed",
+      "gradient_clip_val": 1.0,
+      "devices": 1,
+      "seed": 42,
+      "experiment_name": "Full_Model",
+      "use_wandb": false,
+      "wandb_project": "Affect-Diff-CVPR"
+    },
+    "test_metrics": {
+      "test_loss": 3.1137325763702393,
+      "test_acc": 0.5428571701049805,
+      "test_bal_acc": 0.24855823814868927,
+      "test_loss_task": 3.0444631576538086,
+      "test_loss_kl": 0.08891839534044266,
+      "test_loss_diff": 0.66647869348526,
+      "test_loss_causal": 0.007563678082078695,
+      "test_loss_recon": 0.0,
+      "test_macro_f1": 0.21406801044940948,
+      "test_balanced_acc": 0.22371059656143188,
+      "test_auroc": 0.6043991446495056
+    },
+    "rich_metrics": {
+      "macro_f1": 0.21406801044940948,
+      "balanced_acc": 0.22371060152848563,
+      "auroc": 0.6043991446495056,
+      "per_class_f1": {
+        "Happy": 0.7342256307601929,
+        "Sad": 0.375,
+        "Angry": 0.17518247663974762,
+        "Fear": 0.0,
+        "Disgust": 0.0,
+        "Surprise": 0.0
+      },
+      "per_class_prec": {
+        "Happy": 0.7804877758026123,
+        "Sad": 0.4615384638309479,
+        "Angry": 0.11881188303232193,
+        "Fear": 0.0,
+        "Disgust": 0.0,
+        "Surprise": 0.0
+      },
+      "per_class_rec": {
+        "Happy": 0.6931408047676086,
+        "Sad": 0.31578946113586426,
+        "Angry": 0.3333333432674408,
+        "Fear": 0.0,
+        "Disgust": 0.0,
+        "Surprise": 0.0
+      },
+      "confusion_matrix": [
+        [
+          192,
+          19,
+          52,
+          7,
+          0,
+          7
+        ],
+        [
+          23,
+          24,
+          24,
+          1,
+          1,
+          3
+        ],
+        [
+          16,
+          7,
+          12,
+          1,
+          0,
+          0
+        ],
+        [
+          3,
+          1,
+          4,
+          0,
+          0,
+          0
+        ],
+        [
+          6,
+          0,
+          5,
+          0,
+          0,
+          1
+        ],
+        [
+          6,
+          1,
+          4,
+          0,
+          0,
+          0
+        ]
+      ]
+    },
+    "robustness": {
+      "missing_text": {
+        "acc": 0.5452380776405334,
+        "macro_f1": 0.2048669457435608
+      },
+      "missing_audio": {
+        "acc": 0.6071428656578064,
+        "macro_f1": 0.23236693441867828
+      },
+      "missing_vision": {
+        "acc": 0.4952380955219269,
+        "macro_f1": 0.1786191165447235
+      },
+      "noise_0.1": {
+        "acc": 0.538095235824585,
+        "macro_f1": 0.21330586075782776
+      },
+      "noise_0.25": {
+        "acc": 0.5404762029647827,
+        "macro_f1": 0.20907507836818695
+      },
+      "noise_0.5": {
+        "acc": 0.550000011920929,
+        "macro_f1": 0.2187945544719696
+      },
+      "noise_1.0": {
+        "acc": 0.5785714387893677,
+        "macro_f1": 0.21161986887454987
+      },
+      "noise_2.0": {
+        "acc": 0.6190476417541504,
+        "macro_f1": 0.19995689392089844
+      },
+      "frame_mask_0.1": {
+        "acc": 0.5452380776405334,
+        "macro_f1": 0.24842453002929688
+      },
+      "frame_mask_0.25": {
+        "acc": 0.5571428537368774,
+        "macro_f1": 0.22998099029064178
+      },
+      "frame_mask_0.5": {
+        "acc": 0.5547618865966797,
+        "macro_f1": 0.20848849415779114
+      },
+      "frame_mask_0.75": {
+        "acc": 0.5738095045089722,
+        "macro_f1": 0.22038547694683075
+      }
+    },
+    "efficiency": {
+      "total_params": 8916553,
+      "trainable_params": 5194953,
+      "latency_ms": 82.45
+    },
+    "train_time_min": 4.1,
+    "best_ckpt": "/kaggle/working/ablation_ckpts/Full_Model/best-epoch=28-val_bal_acc=0.384.ckpt"
+  },
+  "No_Causal_Graph": {
+    "experiment_name": "No_Causal_Graph",
+    "config": {
+      "ckpt_dir": "/kaggle/working/ablation_ckpts",
+      "batch_size": 64,
+      "num_workers": 2,
+      "text_dim": 300,
+      "audio_dim": 74,
+      "video_dim": 35,
+      "hidden_dim": 128,
+      "latent_dim": 128,
+      "num_classes": 6,
+      "encoder_type": "legacy",
+      "encoder_layers": 2,
+      "encoder_dropout": 0.3,
+      "fusion_type": "concat",
+      "num_bottleneck_tokens": 20,
+      "num_cross_attn_layers": 1,
+      "num_self_attn_layers": 1,
+      "dag_method": "notears",
+      "diffusion_steps": 1000,
+      "ddim_steps": 50,
+      "beta_kl": 0.1,
+      "lambda_diff": 0.05,
+      "lambda_causal": 0.05,
+      "lambda_recon": 0.5,
+      "cfg_scale": 3.0,
+      "ema_decay": 0.999,
+      "label_smoothing": 0.1,
+      "free_bits": 0.0,
+      "use_reconstruction": false,
+      "use_diffusion": true,
+      "use_causal_graph": false,
+      "use_augmentation": true,
+      "use_beta_tc_vae": false,
+      "use_focal_loss": true,
+      "focal_gamma": 2.0,
+      "use_vae": true,
+      "use_stop_gradient": true,
+      "use_cfg": true,
+      "use_causal_diffusion_cond": true,
+      "use_kl_warmup": true,
+      "lr": 0.0005,
+      "weight_decay": 0.0001,
+      "epochs": 100,
+      "patience": 35,
+      "precision": "16-mixed",
+      "gradient_clip_val": 1.0,
+      "devices": 1,
+      "seed": 42,
+      "experiment_name": "No_Causal_Graph",
+      "use_wandb": false,
+      "wandb_project": "Affect-Diff-CVPR"
+    },
+    "test_metrics": {
+      "test_loss": 3.562716484069824,
+      "test_acc": 0.47857141494750977,
+      "test_bal_acc": 0.1977212280035019,
+      "test_loss_task": 3.426501750946045,
+      "test_loss_kl": 0.1018979549407959,
+      "test_loss_diff": 0.6863393187522888,
+      "test_loss_causal": 0.0,
+      "test_loss_recon": 0.0,
+      "test_macro_f1": 0.20533129572868347,
+      "test_balanced_acc": 0.21479691565036774,
+      "test_auroc": 0.547984778881073
+    },
+    "rich_metrics": {
+      "macro_f1": 0.20533129572868347,
+      "balanced_acc": 0.2147969218591849,
+      "auroc": 0.547984778881073,
+      "per_class_f1": {
+        "Happy": 0.6899384260177612,
+        "Sad": 0.3576158881187439,
+        "Angry": 0.1111111119389534,
+        "Fear": 0.042553190141916275,
+        "Disgust": 0.0,
+        "Surprise": 0.03076923079788685
+      },
+      "per_class_prec": {
+        "Happy": 0.800000011920929,
+        "Sad": 0.36000001430511475,
+        "Angry": 0.1111111119389534,
+        "Fear": 0.025641025975346565,
+        "Disgust": 0.0,
+        "Surprise": 0.018518518656492233
+      },
+      "per_class_rec": {
+        "Happy": 0.6064981818199158,
+        "Sad": 0.3552631437778473,
+        "Angry": 0.1111111119389534,
+        "Fear": 0.125,
+        "Disgust": 0.0,
+        "Surprise": 0.09090909361839294
+      },
+      "confusion_matrix": [
+        [
+          168,
+          30,
+          22,
+          20,
+          4,
+          33
+        ],
+        [
+          19,
+          27,
+          6,
+          9,
+          2,
+          13
+        ],
+        [
+          12,
+          10,
+          4,
+          6,
+          0,
+          4
+        ],
+        [
+          3,
+          2,
+          2,
+          1,
+          0,
+          0
+        ],
+        [
+          5,
+          1,
+          1,
+          2,
+          0,
+          3
+        ],
+        [
+          3,
+          5,
+          1,
+          1,
+          0,
+          1
+        ]
+      ]
+    },
+    "robustness": {
+      "missing_text": {
+        "acc": 0.40238094329833984,
+        "macro_f1": 0.18759119510650635
+      },
+      "missing_audio": {
+        "acc": 0.5357142686843872,
+        "macro_f1": 0.2537754476070404
+      },
+      "missing_vision": {
+        "acc": 0.47380951046943665,
+        "macro_f1": 0.21395161747932434
+      },
+      "noise_0.1": {
+        "acc": 0.47857141494750977,
+        "macro_f1": 0.2087119221687317
+      },
+      "noise_0.25": {
+        "acc": 0.4833333194255829,
+        "macro_f1": 0.21208380162715912
+      },
+      "noise_0.5": {
+        "acc": 0.4690476059913635,
+        "macro_f1": 0.1846637725830078
+      },
+      "noise_1.0": {
+        "acc": 0.5547618865966797,
+        "macro_f1": 0.2389606088399887
+      },
+      "noise_2.0": {
+        "acc": 0.5785714387893677,
+        "macro_f1": 0.20807583630084991
+      },
+      "frame_mask_0.1": {
+        "acc": 0.4761904776096344,
+        "macro_f1": 0.20236408710479736
+      },
+      "frame_mask_0.25": {
+        "acc": 0.5047619342803955,
+        "macro_f1": 0.22516895830631256
+      },
+      "frame_mask_0.5": {
+        "acc": 0.4952380955219269,
+        "macro_f1": 0.21964454650878906
+      },
+      "frame_mask_0.75": {
+        "acc": 0.4523809552192688,
+        "macro_f1": 0.18287356197834015
+      }
+    },
+    "efficiency": {
+      "total_params": 8916553,
+      "trainable_params": 5194953,
+      "latency_ms": 84.18
+    },
+    "train_time_min": 4.4,
+    "best_ckpt": "/kaggle/working/ablation_ckpts/No_Causal_Graph/best-epoch=34-val_bal_acc=0.334.ckpt"
+  },
+  "No_NOTEARS": {
+    "experiment_name": "No_NOTEARS",
+    "config": {
+      "ckpt_dir": "/kaggle/working/ablation_ckpts",
+      "batch_size": 64,
+      "num_workers": 2,
+      "text_dim": 300,
+      "audio_dim": 74,
+      "video_dim": 35,
+      "hidden_dim": 128,
+      "latent_dim": 128,
+      "num_classes": 6,
+      "encoder_type": "legacy",
+      "encoder_layers": 2,
+      "encoder_dropout": 0.3,
+      "fusion_type": "concat",
+      "num_bottleneck_tokens": 20,
+      "num_cross_attn_layers": 1,
+      "num_self_attn_layers": 1,
+      "dag_method": "gumbel",
+      "diffusion_steps": 1000,
+      "ddim_steps": 50,
+      "beta_kl": 0.1,
+      "lambda_diff": 0.05,
+      "lambda_causal": 0.05,
+      "lambda_recon": 0.5,
+      "cfg_scale": 3.0,
+      "ema_decay": 0.999,
+      "label_smoothing": 0.1,
+      "free_bits": 0.0,
+      "use_reconstruction": false,
+      "use_diffusion": true,
+      "use_causal_graph": true,
+      "use_augmentation": true,
+      "use_beta_tc_vae": false,
+      "use_focal_loss": true,
+      "focal_gamma": 2.0,
+      "use_vae": true,
+      "use_stop_gradient": true,
+      "use_cfg": true,
+      "use_causal_diffusion_cond": true,
+      "use_kl_warmup": true,
+      "lr": 0.0005,
+      "weight_decay": 0.0001,
+      "epochs": 100,
+      "patience": 35,
+      "precision": "16-mixed",
+      "gradient_clip_val": 1.0,
+      "devices": 1,
+      "seed": 42,
+      "experiment_name": "No_NOTEARS",
+      "use_wandb": false,
+      "wandb_project": "Affect-Diff-CVPR"
+    },
+    "test_metrics": {
+      "test_loss": 3.7104172706604004,
+      "test_acc": 0.5404762029647827,
+      "test_bal_acc": 0.21879766881465912,
+      "test_loss_task": 3.4769816398620605,
+      "test_loss_kl": 0.1994350254535675,
+      "test_loss_diff": 0.6789919137954712,
+      "test_loss_causal": 0.0010303263552486897,
+      "test_loss_recon": 0.0,
+      "test_macro_f1": 0.21704447269439697,
+      "test_balanced_acc": 0.23234574496746063,
+      "test_auroc": 0.5480320453643799
+    },
+    "rich_metrics": {
+      "macro_f1": 0.21704447269439697,
+      "balanced_acc": 0.23234574496746063,
+      "auroc": 0.5480320453643799,
+      "per_class_f1": {
+        "Happy": 0.7447217106819153,
+        "Sad": 0.3174603283405304,
+        "Angry": 0.19130434095859528,
+        "Fear": 0.04878048598766327,
+        "Disgust": 0.0,
+        "Surprise": 0.0
+      },
+      "per_class_prec": {
+        "Happy": 0.7950819730758667,
+        "Sad": 0.4000000059604645,
+        "Angry": 0.13924050331115723,
+        "Fear": 0.03030303120613098,
+        "Disgust": 0.0,
+        "Surprise": 0.0
+      },
+      "per_class_rec": {
+        "Happy": 0.7003610134124756,
+        "Sad": 0.2631579041481018,
+        "Angry": 0.3055555522441864,
+        "Fear": 0.125,
+        "Disgust": 0.0,
+        "Surprise": 0.0
+      },
+      "confusion_matrix": [
+        [
+          194,
+          21,
+          37,
+          20,
+          3,
+          2
+        ],
+        [
+          22,
+          20,
+          22,
+          6,
+          1,
+          5
+        ],
+        [
+          14,
+          5,
+          11,
+          4,
+          0,
+          2
+        ],
+        [
+          4,
+          2,
+          1,
+          1,
+          0,
+          0
+        ],
+        [
+          3,
+          1,
+          6,
+          1,
+          0,
+          1
+        ],
+        [
+          7,
+          1,
+          2,
+          1,
+          0,
+          0
+        ]
+      ]
+    },
+    "robustness": {
+      "missing_text": {
+        "acc": 0.5214285850524902,
+        "macro_f1": 0.20063166320323944
+      },
+      "missing_audio": {
+        "acc": 0.5404762029647827,
+        "macro_f1": 0.2353295087814331
+      },
+      "missing_vision": {
+        "acc": 0.4595237970352173,
+        "macro_f1": 0.16911186277866364
+      },
+      "noise_0.1": {
+        "acc": 0.5309523940086365,
+        "macro_f1": 0.21089088916778564
+      },
+      "noise_0.25": {
+        "acc": 0.5309523940086365,
+        "macro_f1": 0.22727307677268982
+      },
+      "noise_0.5": {
+        "acc": 0.5452380776405334,
+        "macro_f1": 0.23516446352005005
+      },
+      "noise_1.0": {
+        "acc": 0.5452380776405334,
+        "macro_f1": 0.22504161298274994
+      },
+      "noise_2.0": {
+        "acc": 0.561904788017273,
+        "macro_f1": 0.17988842725753784
+      },
+      "frame_mask_0.1": {
+        "acc": 0.5142857432365417,
+        "macro_f1": 0.21293668448925018
+      },
+      "frame_mask_0.25": {
+        "acc": 0.5452380776405334,
+        "macro_f1": 0.21683470904827118
+      },
+      "frame_mask_0.5": {
+        "acc": 0.5285714268684387,
+        "macro_f1": 0.22218553721904755
+      },
+      "frame_mask_0.75": {
+        "acc": 0.5214285850524902,
+        "macro_f1": 0.18642258644104004
+      }
+    },
+    "efficiency": {
+      "total_params": 8916553,
+      "trainable_params": 5194953,
+      "latency_ms": 85.1
+    },
+    "train_time_min": 4.9,
+    "best_ckpt": "/kaggle/working/ablation_ckpts/No_NOTEARS/best-epoch=41-val_bal_acc=0.325.ckpt"
+  },
+  "No_Perceiver": {
+    "experiment_name": "No_Perceiver",
+    "config": {
+      "ckpt_dir": "/kaggle/working/ablation_ckpts",
+      "batch_size": 64,
+      "num_workers": 2,
+      "text_dim": 300,
+      "audio_dim": 74,
+      "video_dim": 35,
+      "hidden_dim": 128,
+      "latent_dim": 128,
+      "num_classes": 6,
+      "encoder_type": "legacy",
+      "encoder_layers": 2,
+      "encoder_dropout": 0.3,
+      "fusion_type": "concat",
+      "num_bottleneck_tokens": 20,
+      "num_cross_attn_layers": 1,
+      "num_self_attn_layers": 1,
+      "dag_method": "notears",
+      "diffusion_steps": 1000,
+      "ddim_steps": 50,
+      "beta_kl": 0.1,
+      "lambda_diff": 0.05,
+      "lambda_causal": 0.05,
+      "lambda_recon": 0.5,
+      "cfg_scale": 3.0,
+      "ema_decay": 0.999,
+      "label_smoothing": 0.1,
+      "free_bits": 0.0,
+      "use_reconstruction": false,
+      "use_diffusion": true,
+      "use_causal_graph": true,
+      "use_augmentation": true,
+      "use_beta_tc_vae": false,
+      "use_focal_loss": true,
+      "focal_gamma": 2.0,
+      "use_vae": true,
+      "use_stop_gradient": true,
+      "use_cfg": true,
+      "use_causal_diffusion_cond": true,
+      "use_kl_warmup": true,
+      "lr": 0.0005,
+      "weight_decay": 0.0001,
+      "epochs": 100,
+      "patience": 35,
+      "precision": "16-mixed",
+      "gradient_clip_val": 1.0,
+      "devices": 1,
+      "seed": 42,
+      "experiment_name": "No_Perceiver",
+      "use_wandb": false,
+      "wandb_project": "Affect-Diff-CVPR"
+    },
+    "test_metrics": {
+      "test_loss": 3.1137325763702393,
+      "test_acc": 0.5428571701049805,
+      "test_bal_acc": 0.24855823814868927,
+      "test_loss_task": 3.0444631576538086,
+      "test_loss_kl": 0.08891839534044266,
+      "test_loss_diff": 0.66647869348526,
+      "test_loss_causal": 0.007563678082078695,
+      "test_loss_recon": 0.0,
+      "test_macro_f1": 0.21406801044940948,
+      "test_balanced_acc": 0.22371059656143188,
+      "test_auroc": 0.6043991446495056
+    },
+    "rich_metrics": {
+      "macro_f1": 0.21406801044940948,
+      "balanced_acc": 0.22371060152848563,
+      "auroc": 0.6043991446495056,
+      "per_class_f1": {
+        "Happy": 0.7342256307601929,
+        "Sad": 0.375,
+        "Angry": 0.17518247663974762,
+        "Fear": 0.0,
+        "Disgust": 0.0,
+        "Surprise": 0.0
+      },
+      "per_class_prec": {
+        "Happy": 0.7804877758026123,
+        "Sad": 0.4615384638309479,
+        "Angry": 0.11881188303232193,
+        "Fear": 0.0,
+        "Disgust": 0.0,
+        "Surprise": 0.0
+      },
+      "per_class_rec": {
+        "Happy": 0.6931408047676086,
+        "Sad": 0.31578946113586426,
+        "Angry": 0.3333333432674408,
+        "Fear": 0.0,
+        "Disgust": 0.0,
+        "Surprise": 0.0
+      },
+      "confusion_matrix": [
+        [
+          192,
+          19,
+          52,
+          7,
+          0,
+          7
+        ],
+        [
+          23,
+          24,
+          24,
+          1,
+          1,
+          3
+        ],
+        [
+          16,
+          7,
+          12,
+          1,
+          0,
+          0
+        ],
+        [
+          3,
+          1,
+          4,
+          0,
+          0,
+          0
+        ],
+        [
+          6,
+          0,
+          5,
+          0,
+          0,
+          1
+        ],
+        [
+          6,
+          1,
+          4,
+          0,
+          0,
+          0
+        ]
+      ]
+    },
+    "robustness": {
+      "missing_text": {
+        "acc": 0.5452380776405334,
+        "macro_f1": 0.2048669457435608
+      },
+      "missing_audio": {
+        "acc": 0.6071428656578064,
+        "macro_f1": 0.23236693441867828
+      },
+      "missing_vision": {
+        "acc": 0.4952380955219269,
+        "macro_f1": 0.1786191165447235
+      },
+      "noise_0.1": {
+        "acc": 0.538095235824585,
+        "macro_f1": 0.21330586075782776
+      },
+      "noise_0.25": {
+        "acc": 0.5404762029647827,
+        "macro_f1": 0.20907507836818695
+      },
+      "noise_0.5": {
+        "acc": 0.550000011920929,
+        "macro_f1": 0.2187945544719696
+      },
+      "noise_1.0": {
+        "acc": 0.5785714387893677,
+        "macro_f1": 0.21161986887454987
+      },
+      "noise_2.0": {
+        "acc": 0.6190476417541504,
+        "macro_f1": 0.19995689392089844
+      },
+      "frame_mask_0.1": {
+        "acc": 0.5452380776405334,
+        "macro_f1": 0.24842453002929688
+      },
+      "frame_mask_0.25": {
+        "acc": 0.5571428537368774,
+        "macro_f1": 0.22998099029064178
+      },
+      "frame_mask_0.5": {
+        "acc": 0.5547618865966797,
+        "macro_f1": 0.20848849415779114
+      },
+      "frame_mask_0.75": {
+        "acc": 0.5738095045089722,
+        "macro_f1": 0.22038547694683075
+      }
+    },
+    "efficiency": {
+      "total_params": 8916553,
+      "trainable_params": 5194953,
+      "latency_ms": 88.85
+    },
+    "train_time_min": 4.2,
+    "best_ckpt": "/kaggle/working/ablation_ckpts/No_Perceiver/best-epoch=28-val_bal_acc=0.384.ckpt"
+  },
+  "No_VAE": {
+    "experiment_name": "No_VAE",
+    "config": {
+      "ckpt_dir": "/kaggle/working/ablation_ckpts",
+      "batch_size": 64,
+      "num_workers": 2,
+      "text_dim": 300,
+      "audio_dim": 74,
+      "video_dim": 35,
+      "hidden_dim": 128,
+      "latent_dim": 128,
+      "num_classes": 6,
+      "encoder_type": "legacy",
+      "encoder_layers": 2,
+      "encoder_dropout": 0.3,
+      "fusion_type": "concat",
+      "num_bottleneck_tokens": 20,
+      "num_cross_attn_layers": 1,
+      "num_self_attn_layers": 1,
+      "dag_method": "notears",
+      "diffusion_steps": 1000,
+      "ddim_steps": 50,
+      "beta_kl": 0.1,
+      "lambda_diff": 0.05,
+      "lambda_causal": 0.05,
+      "lambda_recon": 0.5,
+      "cfg_scale": 3.0,
+      "ema_decay": 0.999,
+      "label_smoothing": 0.1,
+      "free_bits": 0.0,
+      "use_reconstruction": false,
+      "use_diffusion": true,
+      "use_causal_graph": true,
+      "use_augmentation": true,
+      "use_beta_tc_vae": false,
+      "use_focal_loss": true,
+      "focal_gamma": 2.0,
+      "use_vae": false,
+      "use_stop_gradient": true,
+      "use_cfg": true,
+      "use_causal_diffusion_cond": true,
+      "use_kl_warmup": true,
+      "lr": 0.0005,
+      "weight_decay": 0.0001,
+      "epochs": 100,
+      "patience": 35,
+      "precision": "16-mixed",
+      "gradient_clip_val": 1.0,
+      "devices": 1,
+      "seed": 42,
+      "experiment_name": "No_VAE",
+      "use_wandb": false,
+      "wandb_project": "Affect-Diff-CVPR"
+    },
+    "test_metrics": {
+      "test_loss": 2.9069793224334717,
+      "test_acc": 0.43095237016677856,
+      "test_bal_acc": 0.26525843143463135,
+      "test_loss_task": 2.8745007514953613,
+      "test_loss_kl": 0.0,
+      "test_loss_diff": 0.5977696180343628,
+      "test_loss_causal": 0.05180617421865463,
+      "test_loss_recon": 0.0,
+      "test_macro_f1": 0.2420201450586319,
+      "test_balanced_acc": 0.3217131495475769,
+      "test_auroc": 0.6241002082824707
+    },
+    "rich_metrics": {
+      "macro_f1": 0.2420201450586319,
+      "balanced_acc": 0.3217131557563941,
+      "auroc": 0.6241002082824707,
+      "per_class_f1": {
+        "Happy": 0.634482741355896,
+        "Sad": 0.34319525957107544,
+        "Angry": 0.12121212482452393,
+        "Fear": 0.125,
+        "Disgust": 0.12987013161182404,
+        "Surprise": 0.09836065769195557
+      },
+      "per_class_prec": {
+        "Happy": 0.8734177350997925,
+        "Sad": 0.31182795763015747,
+        "Angry": 0.13333334028720856,
+        "Fear": 0.0833333358168602,
+        "Disgust": 0.07692307978868484,
+        "Surprise": 0.05999999865889549
+      },
+      "per_class_rec": {
+        "Happy": 0.49819493293762207,
+        "Sad": 0.3815789520740509,
+        "Angry": 0.1111111119389534,
+        "Fear": 0.25,
+        "Disgust": 0.4166666567325592,
+        "Surprise": 0.27272728085517883
+      },
+      "confusion_matrix": [
+        [
+          138,
+          48,
+          17,
+          13,
+          30,
+          31
+        ],
+        [
+          10,
+          29,
+          5,
+          9,
+          11,
+          12
+        ],
+        [
+          6,
+          7,
+          4,
+          0,
+          15,
+          4
+        ],
+        [
+          1,
+          2,
+          1,
+          2,
+          2,
+          0
+        ],
+        [
+          1,
+          3,
+          3,
+          0,
+          5,
+          0
+        ],
+        [
+          2,
+          4,
+          0,
+          0,
+          2,
+          3
+        ]
+      ]
+    },
+    "robustness": {
+      "missing_text": {
+        "acc": 0.4952380955219269,
+        "macro_f1": 0.2496570497751236
+      },
+      "missing_audio": {
+        "acc": 0.45476189255714417,
+        "macro_f1": 0.242839977145195
+      },
+      "missing_vision": {
+        "acc": 0.261904776096344,
+        "macro_f1": 0.16622622311115265
+      },
+      "noise_0.1": {
+        "acc": 0.43095237016677856,
+        "macro_f1": 0.24100364744663239
+      },
+      "noise_0.25": {
+        "acc": 0.4285714328289032,
+        "macro_f1": 0.24711619317531586
+      },
+      "noise_0.5": {
+        "acc": 0.43809524178504944,
+        "macro_f1": 0.2489928901195526
+      },
+      "noise_1.0": {
+        "acc": 0.4809523820877075,
+        "macro_f1": 0.256488561630249
+      },
+      "noise_2.0": {
+        "acc": 0.5285714268684387,
+        "macro_f1": 0.22212538123130798
+      },
+      "frame_mask_0.1": {
+        "acc": 0.4333333373069763,
+        "macro_f1": 0.2451106756925583
+      },
+      "frame_mask_0.25": {
+        "acc": 0.4642857015132904,
+        "macro_f1": 0.25393804907798767
+      },
+      "frame_mask_0.5": {
+        "acc": 0.4809523820877075,
+        "macro_f1": 0.22901451587677002
+      },
+      "frame_mask_0.75": {
+        "acc": 0.5476190447807312,
+        "macro_f1": 0.24366874992847443
+      }
+    },
+    "efficiency": {
+      "total_params": 8916553,
+      "trainable_params": 5194953,
+      "latency_ms": 82.67
+    },
+    "train_time_min": 3.3,
+    "best_ckpt": "/kaggle/working/ablation_ckpts/No_VAE/best-epoch=14-val_bal_acc=0.362.ckpt"
+  },
+  "No_Reconstruction": {
+    "experiment_name": "No_Reconstruction",
+    "config": {
+      "ckpt_dir": "/kaggle/working/ablation_ckpts",
+      "batch_size": 64,
+      "num_workers": 2,
+      "text_dim": 300,
+      "audio_dim": 74,
+      "video_dim": 35,
+      "hidden_dim": 128,
+      "latent_dim": 128,
+      "num_classes": 6,
+      "encoder_type": "legacy",
+      "encoder_layers": 2,
+      "encoder_dropout": 0.3,
+      "fusion_type": "concat",
+      "num_bottleneck_tokens": 20,
+      "num_cross_attn_layers": 1,
+      "num_self_attn_layers": 1,
+      "dag_method": "notears",
+      "diffusion_steps": 1000,
+      "ddim_steps": 50,
+      "beta_kl": 0.1,
+      "lambda_diff": 0.05,
+      "lambda_causal": 0.05,
+      "lambda_recon": 0.5,
+      "cfg_scale": 3.0,
+      "ema_decay": 0.999,
+      "label_smoothing": 0.1,
+      "free_bits": 0.0,
+      "use_reconstruction": false,
+      "use_diffusion": true,
+      "use_causal_graph": true,
+      "use_augmentation": true,
+      "use_beta_tc_vae": false,
+      "use_focal_loss": true,
+      "focal_gamma": 2.0,
+      "use_vae": true,
+      "use_stop_gradient": true,
+      "use_cfg": true,
+      "use_causal_diffusion_cond": true,
+      "use_kl_warmup": true,
+      "lr": 0.0005,
+      "weight_decay": 0.0001,
+      "epochs": 100,
+      "patience": 35,
+      "precision": "16-mixed",
+      "gradient_clip_val": 1.0,
+      "devices": 1,
+      "seed": 42,
+      "experiment_name": "No_Reconstruction",
+      "use_wandb": false,
+      "wandb_project": "Affect-Diff-CVPR"
+    },
+    "test_metrics": {
+      "test_loss": 3.1137325763702393,
+      "test_acc": 0.5428571701049805,
+      "test_bal_acc": 0.24855823814868927,
+      "test_loss_task": 3.0444631576538086,
+      "test_loss_kl": 0.08891839534044266,
+      "test_loss_diff": 0.66647869348526,
+      "test_loss_causal": 0.007563678082078695,
+      "test_loss_recon": 0.0,
+      "test_macro_f1": 0.21406801044940948,
+      "test_balanced_acc": 0.22371059656143188,
+      "test_auroc": 0.6043991446495056
+    },
+    "rich_metrics": {
+      "macro_f1": 0.21406801044940948,
+      "balanced_acc": 0.22371060152848563,
+      "auroc": 0.6043991446495056,
+      "per_class_f1": {
+        "Happy": 0.7342256307601929,
+        "Sad": 0.375,
+        "Angry": 0.17518247663974762,
+        "Fear": 0.0,
+        "Disgust": 0.0,
+        "Surprise": 0.0
+      },
+      "per_class_prec": {
+        "Happy": 0.7804877758026123,
+        "Sad": 0.4615384638309479,
+        "Angry": 0.11881188303232193,
+        "Fear": 0.0,
+        "Disgust": 0.0,
+        "Surprise": 0.0
+      },
+      "per_class_rec": {
+        "Happy": 0.6931408047676086,
+        "Sad": 0.31578946113586426,
+        "Angry": 0.3333333432674408,
+        "Fear": 0.0,
+        "Disgust": 0.0,
+        "Surprise": 0.0
+      },
+      "confusion_matrix": [
+        [
+          192,
+          19,
+          52,
+          7,
+          0,
+          7
+        ],
+        [
+          23,
+          24,
+          24,
+          1,
+          1,
+          3
+        ],
+        [
+          16,
+          7,
+          12,
+          1,
+          0,
+          0
+        ],
+        [
+          3,
+          1,
+          4,
+          0,
+          0,
+          0
+        ],
+        [
+          6,
+          0,
+          5,
+          0,
+          0,
+          1
+        ],
+        [
+          6,
+          1,
+          4,
+          0,
+          0,
+          0
+        ]
+      ]
+    },
+    "robustness": {
+      "missing_text": {
+        "acc": 0.5452380776405334,
+        "macro_f1": 0.2048669457435608
+      },
+      "missing_audio": {
+        "acc": 0.6071428656578064,
+        "macro_f1": 0.23236693441867828
+      },
+      "missing_vision": {
+        "acc": 0.4952380955219269,
+        "macro_f1": 0.1786191165447235
+      },
+      "noise_0.1": {
+        "acc": 0.538095235824585,
+        "macro_f1": 0.21330586075782776
+      },
+      "noise_0.25": {
+        "acc": 0.5404762029647827,
+        "macro_f1": 0.20907507836818695
+      },
+      "noise_0.5": {
+        "acc": 0.550000011920929,
+        "macro_f1": 0.2187945544719696
+      },
+      "noise_1.0": {
+        "acc": 0.5785714387893677,
+        "macro_f1": 0.21161986887454987
+      },
+      "noise_2.0": {
+        "acc": 0.6190476417541504,
+        "macro_f1": 0.19995689392089844
+      },
+      "frame_mask_0.1": {
+        "acc": 0.5452380776405334,
+        "macro_f1": 0.24842453002929688
+      },
+      "frame_mask_0.25": {
+        "acc": 0.5571428537368774,
+        "macro_f1": 0.22998099029064178
+      },
+      "frame_mask_0.5": {
+        "acc": 0.5547618865966797,
+        "macro_f1": 0.20848849415779114
+      },
+      "frame_mask_0.75": {
+        "acc": 0.5738095045089722,
+        "macro_f1": 0.22038547694683075
+      }
+    },
+    "efficiency": {
+      "total_params": 8916553,
+      "trainable_params": 5194953,
+      "latency_ms": 84.77
+    },
+    "train_time_min": 4.3,
+    "best_ckpt": "/kaggle/working/ablation_ckpts/No_Reconstruction/best-epoch=28-val_bal_acc=0.384.ckpt"
+  },
+  "No_Diffusion": {
+    "experiment_name": "No_Diffusion",
+    "config": {
+      "ckpt_dir": "/kaggle/working/ablation_ckpts",
+      "batch_size": 64,
+      "num_workers": 2,
+      "text_dim": 300,
+      "audio_dim": 74,
+      "video_dim": 35,
+      "hidden_dim": 128,
+      "latent_dim": 128,
+      "num_classes": 6,
+      "encoder_type": "legacy",
+      "encoder_layers": 2,
+      "encoder_dropout": 0.3,
+      "fusion_type": "concat",
+      "num_bottleneck_tokens": 20,
+      "num_cross_attn_layers": 1,
+      "num_self_attn_layers": 1,
+      "dag_method": "notears",
+      "diffusion_steps": 1000,
+      "ddim_steps": 50,
+      "beta_kl": 0.1,
+      "lambda_diff": 0.05,
+      "lambda_causal": 0.05,
+      "lambda_recon": 0.5,
+      "cfg_scale": 3.0,
+      "ema_decay": 0.999,
+      "label_smoothing": 0.1,
+      "free_bits": 0.0,
+      "use_reconstruction": false,
+      "use_diffusion": false,
+      "use_causal_graph": true,
+      "use_augmentation": true,
+      "use_beta_tc_vae": false,
+      "use_focal_loss": true,
+      "focal_gamma": 2.0,
+      "use_vae": true,
+      "use_stop_gradient": true,
+      "use_cfg": true,
+      "use_causal_diffusion_cond": true,
+      "use_kl_warmup": true,
+      "lr": 0.0005,
+      "weight_decay": 0.0001,
+      "epochs": 100,
+      "patience": 35,
+      "precision": "16-mixed",
+      "gradient_clip_val": 1.0,
+      "devices": 1,
+      "seed": 42,
+      "experiment_name": "No_Diffusion",
+      "use_wandb": false,
+      "wandb_project": "Affect-Diff-CVPR"
+    },
+    "test_metrics": {
+      "test_loss": 3.124978542327881,
+      "test_acc": 0.5809524059295654,
+      "test_bal_acc": 0.23261623084545135,
+      "test_loss_task": 3.077854633331299,
+      "test_loss_kl": 0.0515066497027874,
+      "test_loss_diff": 0.0,
+      "test_loss_causal": 0.01535589899867773,
+      "test_loss_recon": 0.0,
+      "test_macro_f1": 0.2281496673822403,
+      "test_balanced_acc": 0.23986084759235382,
+      "test_auroc": 0.5601351857185364
+    },
+    "rich_metrics": {
+      "macro_f1": 0.2281496673822403,
+      "balanced_acc": 0.23986085007588068,
+      "auroc": 0.5601351857185364,
+      "per_class_f1": {
+        "Happy": 0.7686703205108643,
+        "Sad": 0.32258063554763794,
+        "Angry": 0.1599999964237213,
+        "Fear": 0.0,
+        "Disgust": 0.0,
+        "Surprise": 0.11764705926179886
+      },
+      "per_class_prec": {
+        "Happy": 0.7757353186607361,
+        "Sad": 0.3164556920528412,
+        "Angry": 0.1538461595773697,
+        "Fear": 0.0,
+        "Disgust": 0.0,
+        "Surprise": 0.08695652335882187
+      },
+      "per_class_rec": {
+        "Happy": 0.7617328763008118,
+        "Sad": 0.32894736528396606,
+        "Angry": 0.1666666716337204,
+        "Fear": 0.0,
+        "Disgust": 0.0,
+        "Surprise": 0.1818181872367859
+      },
+      "confusion_matrix": [
+        [
+          211,
+          35,
+          15,
+          4,
+          0,
+          12
+        ],
+        [
+          31,
+          25,
+          12,
+          2,
+          0,
+          6
+        ],
+        [
+          18,
+          9,
+          6,
+          1,
+          0,
+          2
+        ],
+        [
+          3,
+          3,
+          2,
+          0,
+          0,
+          0
+        ],
+        [
+          6,
+          2,
+          3,
+          0,
+          0,
+          1
+        ],
+        [
+          3,
+          5,
+          1,
+          0,
+          0,
+          2
+        ]
+      ]
+    },
+    "robustness": {
+      "missing_text": {
+        "acc": 0.5428571701049805,
+        "macro_f1": 0.2256961315870285
+      },
+      "missing_audio": {
+        "acc": 0.6095238327980042,
+        "macro_f1": 0.21640299260616302
+      },
+      "missing_vision": {
+        "acc": 0.5833333134651184,
+        "macro_f1": 0.20559614896774292
+      },
+      "noise_0.1": {
+        "acc": 0.5666666626930237,
+        "macro_f1": 0.2215118557214737
+      },
+      "noise_0.25": {
+        "acc": 0.5761904716491699,
+        "macro_f1": 0.2119694948196411
+      },
+      "noise_0.5": {
+        "acc": 0.5857142806053162,
+        "macro_f1": 0.2366466075181961
+      },
+      "noise_1.0": {
+        "acc": 0.6404761672019958,
+        "macro_f1": 0.21464461088180542
+      },
+      "noise_2.0": {
+        "acc": 0.6047618985176086,
+        "macro_f1": 0.16483934223651886
+      },
+      "frame_mask_0.1": {
+        "acc": 0.5761904716491699,
+        "macro_f1": 0.23295356333255768
+      },
+      "frame_mask_0.25": {
+        "acc": 0.5857142806053162,
+        "macro_f1": 0.22816090285778046
+      },
+      "frame_mask_0.5": {
+        "acc": 0.5761904716491699,
+        "macro_f1": 0.2525973618030548
+      },
+      "frame_mask_0.75": {
+        "acc": 0.5666666626930237,
+        "macro_f1": 0.20250007510185242
+      }
+    },
+    "efficiency": {
+      "total_params": 1473353,
+      "trainable_params": 1473353,
+      "latency_ms": 84.95
+    },
+    "train_time_min": 2.7,
+    "best_ckpt": "/kaggle/working/ablation_ckpts/No_Diffusion/best-epoch=33-val_bal_acc=0.292.ckpt"
+  },
+  "No_Stop_Gradient": {
+    "experiment_name": "No_Stop_Gradient",
+    "config": {
+      "ckpt_dir": "/kaggle/working/ablation_ckpts",
+      "batch_size": 64,
+      "num_workers": 2,
+      "text_dim": 300,
+      "audio_dim": 74,
+      "video_dim": 35,
+      "hidden_dim": 128,
+      "latent_dim": 128,
+      "num_classes": 6,
+      "encoder_type": "legacy",
+      "encoder_layers": 2,
+      "encoder_dropout": 0.3,
+      "fusion_type": "concat",
+      "num_bottleneck_tokens": 20,
+      "num_cross_attn_layers": 1,
+      "num_self_attn_layers": 1,
+      "dag_method": "notears",
+      "diffusion_steps": 1000,
+      "ddim_steps": 50,
+      "beta_kl": 0.1,
+      "lambda_diff": 0.05,
+      "lambda_causal": 0.05,
+      "lambda_recon": 0.5,
+      "cfg_scale": 3.0,
+      "ema_decay": 0.999,
+      "label_smoothing": 0.1,
+      "free_bits": 0.0,
+      "use_reconstruction": false,
+      "use_diffusion": true,
+      "use_causal_graph": true,
+      "use_augmentation": true,
+      "use_beta_tc_vae": false,
+      "use_focal_loss": true,
+      "focal_gamma": 2.0,
+      "use_vae": true,
+      "use_stop_gradient": false,
+      "use_cfg": true,
+      "use_causal_diffusion_cond": true,
+      "use_kl_warmup": true,
+      "lr": 0.0005,
+      "weight_decay": 0.0001,
+      "epochs": 100,
+      "patience": 35,
+      "precision": "16-mixed",
+      "gradient_clip_val": 1.0,
+      "devices": 1,
+      "seed": 42,
+      "experiment_name": "No_Stop_Gradient",
+      "use_wandb": false,
+      "wandb_project": "Affect-Diff-CVPR"
+    },
+    "test_metrics": {
+      "test_loss": 3.0951461791992188,
+      "test_acc": 0.4928571283817291,
+      "test_bal_acc": 0.2165687382221222,
+      "test_loss_task": 3.0336742401123047,
+      "test_loss_kl": 0.135984867811203,
+      "test_loss_diff": 0.6756335496902466,
+      "test_loss_causal": 0.009871212765574455,
+      "test_loss_recon": 0.0,
+      "test_macro_f1": 0.2163102924823761,
+      "test_balanced_acc": 0.24693019688129425,
+      "test_auroc": 0.6399055123329163
+    },
+    "rich_metrics": {
+      "macro_f1": 0.2163102924823761,
+      "balanced_acc": 0.246930201848348,
+      "auroc": 0.6399055123329163,
+      "per_class_f1": {
+        "Happy": 0.7206477522850037,
+        "Sad": 0.24761904776096344,
+        "Angry": 0.192592591047287,
+        "Fear": 0.0714285746216774,
+        "Disgust": 0.0,
+        "Surprise": 0.06557376682758331
+      },
+      "per_class_prec": {
+        "Happy": 0.8202764987945557,
+        "Sad": 0.4482758641242981,
+        "Angry": 0.13131313025951385,
+        "Fear": 0.05000000074505806,
+        "Disgust": 0.0,
+        "Surprise": 0.03999999910593033
+      },
+      "per_class_rec": {
+        "Happy": 0.6425992846488953,
+        "Sad": 0.17105263471603394,
+        "Angry": 0.3611111044883728,
+        "Fear": 0.125,
+        "Disgust": 0.0,
+        "Surprise": 0.1818181872367859
+      },
+      "confusion_matrix": [
+        [
+          178,
+          11,
+          41,
+          13,
+          3,
+          31
+        ],
+        [
+          19,
+          13,
+          29,
+          3,
+          0,
+          12
+        ],
+        [
+          13,
+          2,
+          13,
+          2,
+          2,
+          4
+        ],
+        [
+          1,
+          1,
+          5,
+          1,
+          0,
+          0
+        ],
+        [
+          2,
+          1,
+          7,
+          1,
+          0,
+          1
+        ],
+        [
+          4,
+          1,
+          4,
+          0,
+          0,
+          2
+        ]
+      ]
+    },
+    "robustness": {
+      "missing_text": {
+        "acc": 0.538095235824585,
+        "macro_f1": 0.2044735848903656
+      },
+      "missing_audio": {
+        "acc": 0.5880952477455139,
+        "macro_f1": 0.2225678265094757
+      },
+      "missing_vision": {
+        "acc": 0.4476190507411957,
+        "macro_f1": 0.17699548602104187
+      },
+      "noise_0.1": {
+        "acc": 0.48571428656578064,
+        "macro_f1": 0.21630758047103882
+      },
+      "noise_0.25": {
+        "acc": 0.49761903285980225,
+        "macro_f1": 0.2157920002937317
+      },
+      "noise_0.5": {
+        "acc": 0.5095238089561462,
+        "macro_f1": 0.23598244786262512
+      },
+      "noise_1.0": {
+        "acc": 0.561904788017273,
+        "macro_f1": 0.23128969967365265
+      },
+      "noise_2.0": {
+        "acc": 0.5571428537368774,
+        "macro_f1": 0.16089367866516113
+      },
+      "frame_mask_0.1": {
+        "acc": 0.488095223903656,
+        "macro_f1": 0.2106804996728897
+      },
+      "frame_mask_0.25": {
+        "acc": 0.4928571283817291,
+        "macro_f1": 0.20693275332450867
+      },
+      "frame_mask_0.5": {
+        "acc": 0.5333333611488342,
+        "macro_f1": 0.2322816252708435
+      },
+      "frame_mask_0.75": {
+        "acc": 0.5523809790611267,
+        "macro_f1": 0.19110965728759766
+      }
+    },
+    "efficiency": {
+      "total_params": 8916553,
+      "trainable_params": 5194953,
+      "latency_ms": 86.3
+    },
+    "train_time_min": 4.2,
+    "best_ckpt": "/kaggle/working/ablation_ckpts/No_Stop_Gradient/best-epoch=26-val_bal_acc=0.315.ckpt"
+  },
+  "No_CFG": {
+    "experiment_name": "No_CFG",
+    "config": {
+      "ckpt_dir": "/kaggle/working/ablation_ckpts",
+      "batch_size": 64,
+      "num_workers": 2,
+      "text_dim": 300,
+      "audio_dim": 74,
+      "video_dim": 35,
+      "hidden_dim": 128,
+      "latent_dim": 128,
+      "num_classes": 6,
+      "encoder_type": "legacy",
+      "encoder_layers": 2,
+      "encoder_dropout": 0.3,
+      "fusion_type": "concat",
+      "num_bottleneck_tokens": 20,
+      "num_cross_attn_layers": 1,
+      "num_self_attn_layers": 1,
+      "dag_method": "notears",
+      "diffusion_steps": 1000,
+      "ddim_steps": 50,
+      "beta_kl": 0.1,
+      "lambda_diff": 0.05,
+      "lambda_causal": 0.05,
+      "lambda_recon": 0.5,
+      "cfg_scale": 3.0,
+      "ema_decay": 0.999,
+      "label_smoothing": 0.1,
+      "free_bits": 0.0,
+      "use_reconstruction": false,
+      "use_diffusion": true,
+      "use_causal_graph": true,
+      "use_augmentation": true,
+      "use_beta_tc_vae": false,
+      "use_focal_loss": true,
+      "focal_gamma": 2.0,
+      "use_vae": true,
+      "use_stop_gradient": true,
+      "use_cfg": false,
+      "use_causal_diffusion_cond": true,
+      "use_kl_warmup": true,
+      "lr": 0.0005,
+      "weight_decay": 0.0001,
+      "epochs": 100,
+      "patience": 35,
+      "precision": "16-mixed",
+      "gradient_clip_val": 1.0,
+      "devices": 1,
+      "seed": 42,
+      "experiment_name": "No_CFG",
+      "use_wandb": false,
+      "wandb_project": "Affect-Diff-CVPR"
+    },
+    "test_metrics": {
+      "test_loss": 3.8297014236450195,
+      "test_acc": 0.526190459728241,
+      "test_bal_acc": 0.21881072223186493,
+      "test_loss_task": 3.7934367656707764,
+      "test_loss_kl": 0.09932456165552139,
+      "test_loss_diff": 0.7046913504600525,
+      "test_loss_causal": 0.02060185931622982,
+      "test_loss_recon": 0.0,
+      "test_macro_f1": 0.2286587655544281,
+      "test_balanced_acc": 0.2328779399394989,
+      "test_auroc": 0.5825979113578796
+    },
+    "rich_metrics": {
+      "macro_f1": 0.2286587655544281,
+      "balanced_acc": 0.23287793869773546,
+      "auroc": 0.5825979113578796,
+      "per_class_f1": {
+        "Happy": 0.7244701385498047,
+        "Sad": 0.3221476376056671,
+        "Angry": 0.15555556118488312,
+        "Fear": 0.10526315867900848,
+        "Disgust": 0.06451612710952759,
+        "Surprise": 0.0
+      },
+      "per_class_prec": {
+        "Happy": 0.7768595218658447,
+        "Sad": 0.3287671208381653,
+        "Angry": 0.12962962687015533,
+        "Fear": 0.09090909361839294,
+        "Disgust": 0.05263157933950424,
+        "Surprise": 0.0
+      },
+      "per_class_rec": {
+        "Happy": 0.6787003874778748,
+        "Sad": 0.31578946113586426,
+        "Angry": 0.1944444477558136,
+        "Fear": 0.125,
+        "Disgust": 0.0833333358168602,
+        "Surprise": 0.0
+      },
+      "confusion_matrix": [
+        [
+          188,
+          32,
+          29,
+          4,
+          10,
+          14
+        ],
+        [
+          27,
+          24,
+          13,
+          4,
+          4,
+          4
+        ],
+        [
+          13,
+          10,
+          7,
+          1,
+          4,
+          1
+        ],
+        [
+          3,
+          2,
+          2,
+          1,
+          0,
+          0
+        ],
+        [
+          6,
+          1,
+          2,
+          0,
+          1,
+          2
+        ],
+        [
+          5,
+          4,
+          1,
+          1,
+          0,
+          0
+        ]
+      ]
+    },
+    "robustness": {
+      "missing_text": {
+        "acc": 0.4761904776096344,
+        "macro_f1": 0.2311272770166397
+      },
+      "missing_audio": {
+        "acc": 0.4404761791229248,
+        "macro_f1": 0.23971670866012573
+      },
+      "missing_vision": {
+        "acc": 0.5095238089561462,
+        "macro_f1": 0.2226075530052185
+      },
+      "noise_0.1": {
+        "acc": 0.526190459728241,
+        "macro_f1": 0.2301442176103592
+      },
+      "noise_0.25": {
+        "acc": 0.511904776096344,
+        "macro_f1": 0.2338656187057495
+      },
+      "noise_0.5": {
+        "acc": 0.5190476179122925,
+        "macro_f1": 0.23058487474918365
+      },
+      "noise_1.0": {
+        "acc": 0.5833333134651184,
+        "macro_f1": 0.2803451120853424
+      },
+      "noise_2.0": {
+        "acc": 0.5857142806053162,
+        "macro_f1": 0.22894953191280365
+      },
+      "frame_mask_0.1": {
+        "acc": 0.5190476179122925,
+        "macro_f1": 0.2471257895231247
+      },
+      "frame_mask_0.25": {
+        "acc": 0.5452380776405334,
+        "macro_f1": 0.24862593412399292
+      },
+      "frame_mask_0.5": {
+        "acc": 0.5357142686843872,
+        "macro_f1": 0.22424526512622833
+      },
+      "frame_mask_0.75": {
+        "acc": 0.5023809671401978,
+        "macro_f1": 0.2369791865348816
+      }
+    },
+    "efficiency": {
+      "total_params": 8916553,
+      "trainable_params": 5194953,
+      "latency_ms": 84.61
+    },
+    "train_time_min": 6.8,
+    "best_ckpt": "/kaggle/working/ablation_ckpts/No_CFG/best-epoch=64-val_bal_acc=0.291.ckpt"
+  },
+  "No_Causal_Diffusion_Cond": {
+    "experiment_name": "No_Causal_Diffusion_Cond",
+    "config": {
+      "ckpt_dir": "/kaggle/working/ablation_ckpts",
+      "batch_size": 64,
+      "num_workers": 2,
+      "text_dim": 300,
+      "audio_dim": 74,
+      "video_dim": 35,
+      "hidden_dim": 128,
+      "latent_dim": 128,
+      "num_classes": 6,
+      "encoder_type": "legacy",
+      "encoder_layers": 2,
+      "encoder_dropout": 0.3,
+      "fusion_type": "concat",
+      "num_bottleneck_tokens": 20,
+      "num_cross_attn_layers": 1,
+      "num_self_attn_layers": 1,
+      "dag_method": "notears",
+      "diffusion_steps": 1000,
+      "ddim_steps": 50,
+      "beta_kl": 0.1,
+      "lambda_diff": 0.05,
+      "lambda_causal": 0.05,
+      "lambda_recon": 0.5,
+      "cfg_scale": 3.0,
+      "ema_decay": 0.999,
+      "label_smoothing": 0.1,
+      "free_bits": 0.0,
+      "use_reconstruction": false,
+      "use_diffusion": true,
+      "use_causal_graph": true,
+      "use_augmentation": true,
+      "use_beta_tc_vae": false,
+      "use_focal_loss": true,
+      "focal_gamma": 2.0,
+      "use_vae": true,
+      "use_stop_gradient": true,
+      "use_cfg": true,
+      "use_causal_diffusion_cond": false,
+      "use_kl_warmup": true,
+      "lr": 0.0005,
+      "weight_decay": 0.0001,
+      "epochs": 100,
+      "patience": 35,
+      "precision": "16-mixed",
+      "gradient_clip_val": 1.0,
+      "devices": 1,
+      "seed": 42,
+      "experiment_name": "No_Causal_Diffusion_Cond",
+      "use_wandb": false,
+      "wandb_project": "Affect-Diff-CVPR"
+    },
+    "test_metrics": {
+      "test_loss": 3.1386969089508057,
+      "test_acc": 0.5333333611488342,
+      "test_bal_acc": 0.24964343011379242,
+      "test_loss_task": 3.0676088333129883,
+      "test_loss_kl": 0.09311692416667938,
+      "test_loss_diff": 0.6670717597007751,
+      "test_loss_causal": 0.00976035837084055,
+      "test_loss_recon": 0.0,
+      "test_macro_f1": 0.2270229458808899,
+      "test_balanced_acc": 0.23744498193264008,
+      "test_auroc": 0.5983391404151917
+    },
+    "rich_metrics": {
+      "macro_f1": 0.2270229458808899,
+      "balanced_acc": 0.23744498689969382,
+      "auroc": 0.5983391404151917,
+      "per_class_f1": {
+        "Happy": 0.7167630195617676,
+        "Sad": 0.38759690523147583,
+        "Angry": 0.17777778208255768,
+        "Fear": 0.0,
+        "Disgust": 0.0,
+        "Surprise": 0.07999999821186066
+      },
+      "per_class_prec": {
+        "Happy": 0.7685950398445129,
+        "Sad": 0.4716981053352356,
+        "Angry": 0.12121212482452393,
+        "Fear": 0.0,
+        "Disgust": 0.0,
+        "Surprise": 0.0714285746216774
+      },
+      "per_class_rec": {
+        "Happy": 0.671480119228363,
+        "Sad": 0.32894736528396606,
+        "Angry": 0.3333333432674408,
+        "Fear": 0.0,
+        "Disgust": 0.0,
+        "Surprise": 0.09090909361839294
+      },
+      "confusion_matrix": [
+        [
+          186,
+          19,
+          54,
+          9,
+          0,
+          9
+        ],
+        [
+          25,
+          25,
+          21,
+          1,
+          1,
+          3
+        ],
+        [
+          17,
+          6,
+          12,
+          1,
+          0,
+          0
+        ],
+        [
+          3,
+          1,
+          4,
+          0,
+          0,
+          0
+        ],
+        [
+          6,
+          1,
+          4,
+          0,
+          0,
+          1
+        ],
+        [
+          5,
+          1,
+          4,
+          0,
+          0,
+          1
+        ]
+      ]
+    },
+    "robustness": {
+      "missing_text": {
+        "acc": 0.5476190447807312,
+        "macro_f1": 0.2322486788034439
+      },
+      "missing_audio": {
+        "acc": 0.6119047403335571,
+        "macro_f1": 0.23590952157974243
+      },
+      "missing_vision": {
+        "acc": 0.5,
+        "macro_f1": 0.1830131560564041
+      },
+      "noise_0.1": {
+        "acc": 0.5333333611488342,
+        "macro_f1": 0.2472243309020996
+      },
+      "noise_0.25": {
+        "acc": 0.5333333611488342,
+        "macro_f1": 0.21027664840221405
+      },
+      "noise_0.5": {
+        "acc": 0.5523809790611267,
+        "macro_f1": 0.21801777184009552
+      },
+      "noise_1.0": {
+        "acc": 0.5761904716491699,
+        "macro_f1": 0.2083248496055603
+      },
+      "noise_2.0": {
+        "acc": 0.6238095164299011,
+        "macro_f1": 0.2057909518480301
+      },
+      "frame_mask_0.1": {
+        "acc": 0.5309523940086365,
+        "macro_f1": 0.22419415414333344
+      },
+      "frame_mask_0.25": {
+        "acc": 0.5404762029647827,
+        "macro_f1": 0.2235693484544754
+      },
+      "frame_mask_0.5": {
+        "acc": 0.5428571701049805,
+        "macro_f1": 0.19860780239105225
+      },
+      "frame_mask_0.75": {
+        "acc": 0.5761904716491699,
+        "macro_f1": 0.24510127305984497
+      }
+    },
+    "efficiency": {
+      "total_params": 8916553,
+      "trainable_params": 5194953,
+      "latency_ms": 82.69
+    },
+    "train_time_min": 4.4,
+    "best_ckpt": "/kaggle/working/ablation_ckpts/No_Causal_Diffusion_Cond/best-epoch=28-val_bal_acc=0.358.ckpt"
+  },
+  "Classifier_Only": {
+    "experiment_name": "Classifier_Only",
+    "config": {
+      "ckpt_dir": "/kaggle/working/ablation_ckpts",
+      "batch_size": 64,
+      "num_workers": 2,
+      "text_dim": 300,
+      "audio_dim": 74,
+      "video_dim": 35,
+      "hidden_dim": 128,
+      "latent_dim": 128,
+      "num_classes": 6,
+      "encoder_type": "legacy",
+      "encoder_layers": 2,
+      "encoder_dropout": 0.3,
+      "fusion_type": "concat",
+      "num_bottleneck_tokens": 20,
+      "num_cross_attn_layers": 1,
+      "num_self_attn_layers": 1,
+      "dag_method": "notears",
+      "diffusion_steps": 1000,
+      "ddim_steps": 50,
+      "beta_kl": 0.1,
+      "lambda_diff": 0.05,
+      "lambda_causal": 0.05,
+      "lambda_recon": 0.5,
+      "cfg_scale": 3.0,
+      "ema_decay": 0.999,
+      "label_smoothing": 0.1,
+      "free_bits": 0.0,
+      "use_reconstruction": false,
+      "use_diffusion": false,
+      "use_causal_graph": false,
+      "use_augmentation": false,
+      "use_beta_tc_vae": false,
+      "use_focal_loss": true,
+      "focal_gamma": 2.0,
+      "use_vae": false,
+      "use_stop_gradient": true,
+      "use_cfg": true,
+      "use_causal_diffusion_cond": true,
+      "use_kl_warmup": true,
+      "lr": 0.0005,
+      "weight_decay": 0.0001,
+      "epochs": 100,
+      "patience": 35,
+      "precision": "16-mixed",
+      "gradient_clip_val": 1.0,
+      "devices": 1,
+      "seed": 42,
+      "experiment_name": "Classifier_Only",
+      "use_wandb": false,
+      "wandb_project": "Affect-Diff-CVPR"
+    },
+    "test_metrics": {
+      "test_loss": 2.8187813758850098,
+      "test_acc": 0.5404762029647827,
+      "test_bal_acc": 0.2764522135257721,
+      "test_loss_task": 2.8187813758850098,
+      "test_loss_kl": 0.0,
+      "test_loss_diff": 0.0,
+      "test_loss_causal": 0.0,
+      "test_loss_recon": 0.0,
+      "test_macro_f1": 0.25769904255867004,
+      "test_balanced_acc": 0.2905674874782562,
+      "test_auroc": 0.612365186214447
+    },
+    "rich_metrics": {
+      "macro_f1": 0.25769904255867004,
+      "balanced_acc": 0.29056749617060024,
+      "auroc": 0.612365186214447,
+      "per_class_f1": {
+        "Happy": 0.739130437374115,
+        "Sad": 0.3636363744735718,
+        "Angry": 0.2222222238779068,
+        "Fear": 0.0,
+        "Disgust": 0.10526315867900848,
+        "Surprise": 0.11594203114509583
+      },
+      "per_class_prec": {
+        "Happy": 0.8165938854217529,
+        "Sad": 0.4285714328289032,
+        "Angry": 0.1746031790971756,
+        "Fear": 0.0,
+        "Disgust": 0.1428571492433548,
+        "Surprise": 0.06896551698446274
+      },
+      "per_class_rec": {
+        "Happy": 0.6750902533531189,
+        "Sad": 0.31578946113586426,
+        "Angry": 0.3055555522441864,
+        "Fear": 0.0,
+        "Disgust": 0.0833333358168602,
+        "Surprise": 0.3636363744735718
+      },
+      "confusion_matrix": [
+        [
+          187,
+          19,
+          31,
+          5,
+          1,
+          34
+        ],
+        [
+          20,
+          24,
+          14,
+          2,
+          3,
+          13
+        ],
+        [
+          13,
+          7,
+          11,
+          0,
+          2,
+          3
+        ],
+        [
+          3,
+          2,
+          3,
+          0,
+          0,
+          0
+        ],
+        [
+          3,
+          1,
+          3,
+          0,
+          1,
+          4
+        ],
+        [
+          3,
+          3,
+          1,
+          0,
+          0,
+          4
+        ]
+      ]
+    },
+    "robustness": {
+      "missing_text": {
+        "acc": 0.5142857432365417,
+        "macro_f1": 0.20443741977214813
+      },
+      "missing_audio": {
+        "acc": 0.511904776096344,
+        "macro_f1": 0.23309671878814697
+      },
+      "missing_vision": {
+        "acc": 0.4166666567325592,
+        "macro_f1": 0.19639016687870026
+      },
+      "noise_0.1": {
+        "acc": 0.5333333611488342,
+        "macro_f1": 0.254807710647583
+      },
+      "noise_0.25": {
+        "acc": 0.538095235824585,
+        "macro_f1": 0.25389719009399414
+      },
+      "noise_0.5": {
+        "acc": 0.5547618865966797,
+        "macro_f1": 0.2470913529396057
+      },
+      "noise_1.0": {
+        "acc": 0.5738095045089722,
+        "macro_f1": 0.242877796292305
+      },
+      "noise_2.0": {
+        "acc": 0.6309523582458496,
+        "macro_f1": 0.23431752622127533
+      },
+      "frame_mask_0.1": {
+        "acc": 0.538095235824585,
+        "macro_f1": 0.2554384171962738
+      },
+      "frame_mask_0.25": {
+        "acc": 0.550000011920929,
+        "macro_f1": 0.23864325881004333
+      },
+      "frame_mask_0.5": {
+        "acc": 0.5547618865966797,
+        "macro_f1": 0.23621992766857147
+      },
+      "frame_mask_0.75": {
+        "acc": 0.526190459728241,
+        "macro_f1": 0.18255041539669037
+      }
+    },
+    "efficiency": {
+      "total_params": 1473353,
+      "trainable_params": 1473353,
+      "latency_ms": 84.53
+    },
+    "train_time_min": 1.8,
+    "best_ckpt": "/kaggle/working/ablation_ckpts/Classifier_Only/best-epoch=14-val_bal_acc=0.322.ckpt"
+  },
+  "Perceiver_Fusion": {
+    "experiment_name": "Perceiver_Fusion",
+    "config": {
+      "ckpt_dir": "/kaggle/working/ablation_ckpts",
+      "batch_size": 64,
+      "num_workers": 2,
+      "text_dim": 300,
+      "audio_dim": 74,
+      "video_dim": 35,
+      "hidden_dim": 128,
+      "latent_dim": 128,
+      "num_classes": 6,
+      "encoder_type": "legacy",
+      "encoder_layers": 2,
+      "encoder_dropout": 0.3,
+      "fusion_type": "concat",
+      "num_bottleneck_tokens": 20,
+      "num_cross_attn_layers": 1,
+      "num_self_attn_layers": 1,
+      "dag_method": "notears",
+      "diffusion_steps": 1000,
+      "ddim_steps": 50,
+      "beta_kl": 0.1,
+      "lambda_diff": 0.05,
+      "lambda_causal": 0.05,
+      "lambda_recon": 0.5,
+      "cfg_scale": 3.0,
+      "ema_decay": 0.999,
+      "label_smoothing": 0.1,
+      "free_bits": 0.0,
+      "use_reconstruction": false,
+      "use_diffusion": true,
+      "use_causal_graph": true,
+      "use_augmentation": true,
+      "use_beta_tc_vae": false,
+      "use_focal_loss": true,
+      "focal_gamma": 2.0,
+      "use_vae": true,
+      "use_stop_gradient": true,
+      "use_cfg": true,
+      "use_causal_diffusion_cond": true,
+      "use_kl_warmup": true,
+      "lr": 0.0005,
+      "weight_decay": 0.0001,
+      "epochs": 100,
+      "patience": 35,
+      "precision": "16-mixed",
+      "gradient_clip_val": 1.0,
+      "devices": 1,
+      "seed": 42,
+      "experiment_name": "Perceiver_Fusion",
+      "use_wandb": false,
+      "wandb_project": "Affect-Diff-CVPR"
+    },
+    "test_metrics": {
+      "test_loss": 3.1137325763702393,
+      "test_acc": 0.5428571701049805,
+      "test_bal_acc": 0.24855823814868927,
+      "test_loss_task": 3.0444631576538086,
+      "test_loss_kl": 0.08891839534044266,
+      "test_loss_diff": 0.66647869348526,
+      "test_loss_causal": 0.007563678082078695,
+      "test_loss_recon": 0.0,
+      "test_macro_f1": 0.21406801044940948,
+      "test_balanced_acc": 0.22371059656143188,
+      "test_auroc": 0.6043991446495056
+    },
+    "rich_metrics": {
+      "macro_f1": 0.21406801044940948,
+      "balanced_acc": 0.22371060152848563,
+      "auroc": 0.6043991446495056,
+      "per_class_f1": {
+        "Happy": 0.7342256307601929,
+        "Sad": 0.375,
+        "Angry": 0.17518247663974762,
+        "Fear": 0.0,
+        "Disgust": 0.0,
+        "Surprise": 0.0
+      },
+      "per_class_prec": {
+        "Happy": 0.7804877758026123,
+        "Sad": 0.4615384638309479,
+        "Angry": 0.11881188303232193,
+        "Fear": 0.0,
+        "Disgust": 0.0,
+        "Surprise": 0.0
+      },
+      "per_class_rec": {
+        "Happy": 0.6931408047676086,
+        "Sad": 0.31578946113586426,
+        "Angry": 0.3333333432674408,
+        "Fear": 0.0,
+        "Disgust": 0.0,
+        "Surprise": 0.0
+      },
+      "confusion_matrix": [
+        [
+          192,
+          19,
+          52,
+          7,
+          0,
+          7
+        ],
+        [
+          23,
+          24,
+          24,
+          1,
+          1,
+          3
+        ],
+        [
+          16,
+          7,
+          12,
+          1,
+          0,
+          0
+        ],
+        [
+          3,
+          1,
+          4,
+          0,
+          0,
+          0
+        ],
+        [
+          6,
+          0,
+          5,
+          0,
+          0,
+          1
+        ],
+        [
+          6,
+          1,
+          4,
+          0,
+          0,
+          0
+        ]
+      ]
+    },
+    "robustness": {
+      "missing_text": {
+        "acc": 0.5452380776405334,
+        "macro_f1": 0.2048669457435608
+      },
+      "missing_audio": {
+        "acc": 0.6071428656578064,
+        "macro_f1": 0.23236693441867828
+      },
+      "missing_vision": {
+        "acc": 0.4952380955219269,
+        "macro_f1": 0.1786191165447235
+      },
+      "noise_0.1": {
+        "acc": 0.538095235824585,
+        "macro_f1": 0.21330586075782776
+      },
+      "noise_0.25": {
+        "acc": 0.5404762029647827,
+        "macro_f1": 0.20907507836818695
+      },
+      "noise_0.5": {
+        "acc": 0.550000011920929,
+        "macro_f1": 0.2187945544719696
+      },
+      "noise_1.0": {
+        "acc": 0.5785714387893677,
+        "macro_f1": 0.21161986887454987
+      },
+      "noise_2.0": {
+        "acc": 0.6190476417541504,
+        "macro_f1": 0.19995689392089844
+      },
+      "frame_mask_0.1": {
+        "acc": 0.5452380776405334,
+        "macro_f1": 0.24842453002929688
+      },
+      "frame_mask_0.25": {
+        "acc": 0.5571428537368774,
+        "macro_f1": 0.22998099029064178
+      },
+      "frame_mask_0.5": {
+        "acc": 0.5547618865966797,
+        "macro_f1": 0.20848849415779114
+      },
+      "frame_mask_0.75": {
+        "acc": 0.5738095045089722,
+        "macro_f1": 0.22038547694683075
+      }
+    },
+    "efficiency": {
+      "total_params": 8916553,
+      "trainable_params": 5194953,
+      "latency_ms": 77.32
+    },
+    "train_time_min": 3.8,
+    "best_ckpt": "/kaggle/working/ablation_ckpts/Perceiver_Fusion/best-epoch=28-val_bal_acc=0.384.ckpt"
+  },
+  "Baseline_TFN": {
+    "experiment_name": "Baseline_TFN",
+    "config": {
+      "ckpt_dir": "/kaggle/working/ablation_ckpts",
+      "batch_size": 64,
+      "num_workers": 2,
+      "text_dim": 300,
+      "audio_dim": 74,
+      "video_dim": 35,
+      "hidden_dim": 128,
+      "latent_dim": 128,
+      "num_classes": 6,
+      "encoder_type": "legacy",
+      "encoder_layers": 2,
+      "encoder_dropout": 0.3,
+      "fusion_type": "concat",
+      "num_bottleneck_tokens": 20,
+      "num_cross_attn_layers": 1,
+      "num_self_attn_layers": 1,
+      "dag_method": "notears",
+      "diffusion_steps": 1000,
+      "ddim_steps": 50,
+      "beta_kl": 0.1,
+      "lambda_diff": 0.05,
+      "lambda_causal": 0.05,
+      "lambda_recon": 0.5,
+      "cfg_scale": 3.0,
+      "ema_decay": 0.999,
+      "label_smoothing": 0.1,
+      "free_bits": 0.0,
+      "use_reconstruction": false,
+      "use_diffusion": true,
+      "use_causal_graph": true,
+      "use_augmentation": true,
+      "use_beta_tc_vae": false,
+      "use_focal_loss": true,
+      "focal_gamma": 2.0,
+      "use_vae": true,
+      "use_stop_gradient": true,
+      "use_cfg": true,
+      "use_causal_diffusion_cond": true,
+      "use_kl_warmup": true,
+      "lr": 0.0005,
+      "weight_decay": 0.0001,
+      "epochs": 100,
+      "patience": 35,
+      "precision": "16-mixed",
+      "gradient_clip_val": 1.0,
+      "devices": 1,
+      "seed": 42,
+      "experiment_name": "Baseline_TFN",
+      "use_wandb": false,
+      "wandb_project": "Affect-Diff-CVPR"
+    },
+    "test_metrics": {
+      "test_loss": 1.2495403289794922,
+      "test_acc": 0.6666666865348816,
+      "test_bal_acc": 0.24646435678005219,
+      "test_macro_f1": 0.20819444954395294,
+      "test_balanced_acc": 0.21312746405601501,
+      "test_auroc": 0.6596363186836243
+    },
+    "rich_metrics": {
+      "macro_f1": 0.20819444954395294,
+      "balanced_acc": 0.21312746467689672,
+      "auroc": 0.6596363186836243,
+      "per_class_f1": {
+        "Happy": 0.8069620132446289,
+        "Sad": 0.36220473051071167,
+        "Angry": 0.07999999821186066,
+        "Fear": 0.0,
+        "Disgust": 0.0,
+        "Surprise": 0.0
+      },
+      "per_class_prec": {
+        "Happy": 0.7183098793029785,
+        "Sad": 0.45098039507865906,
+        "Angry": 0.1428571492433548,
+        "Fear": 0.0,
+        "Disgust": 0.0,
+        "Surprise": 0.0
+      },
+      "per_class_rec": {
+        "Happy": 0.9205776453018188,
+        "Sad": 0.30263158679008484,
+        "Angry": 0.0555555559694767,
+        "Fear": 0.0,
+        "Disgust": 0.0,
+        "Surprise": 0.0
+      },
+      "confusion_matrix": [
+        [
+          255,
+          14,
+          8,
+          0,
+          0,
+          0
+        ],
+        [
+          50,
+          23,
+          3,
+          0,
+          0,
+          0
+        ],
+        [
+          24,
+          10,
+          2,
+          0,
+          0,
+          0
+        ],
+        [
+          6,
+          1,
+          1,
+          0,
+          0,
+          0
+        ],
+        [
+          11,
+          1,
+          0,
+          0,
+          0,
+          0
+        ],
+        [
+          9,
+          2,
+          0,
+          0,
+          0,
+          0
+        ]
+      ]
+    },
+    "robustness": {
+      "missing_text": {
+        "acc": 0.5142857432365417,
+        "macro_f1": 0.19336500763893127
+      },
+      "missing_audio": {
+        "acc": 0.6642857193946838,
+        "macro_f1": 0.23112432658672333
+      },
+      "missing_vision": {
+        "acc": 0.6666666865348816,
+        "macro_f1": 0.20831350982189178
+      },
+      "noise_0.1": {
+        "acc": 0.6666666865348816,
+        "macro_f1": 0.2063421905040741
+      },
+      "noise_0.25": {
+        "acc": 0.6714285612106323,
+        "macro_f1": 0.21250443160533905
+      },
+      "noise_0.5": {
+        "acc": 0.6714285612106323,
+        "macro_f1": 0.21127957105636597
+      },
+      "noise_1.0": {
+        "acc": 0.6571428775787354,
+        "macro_f1": 0.21090319752693176
+      },
+      "noise_2.0": {
+        "acc": 0.6690475940704346,
+        "macro_f1": 0.19529977440834045
+      },
+      "frame_mask_0.1": {
+        "acc": 0.6857143044471741,
+        "macro_f1": 0.2274841070175171
+      },
+      "frame_mask_0.25": {
+        "acc": 0.6619047522544861,
+        "macro_f1": 0.21227073669433594
+      },
+      "frame_mask_0.5": {
+        "acc": 0.6571428775787354,
+        "macro_f1": 0.2146417647600174
+      },
+      "frame_mask_0.75": {
+        "acc": 0.5976190567016602,
+        "macro_f1": 0.22682873904705048
+      }
+    },
+    "efficiency": {
+      "total_params": 644230,
+      "trainable_params": 644230,
+      "latency_ms": 1.55
+    },
+    "train_time_min": 1.0,
+    "best_ckpt": "/kaggle/working/ablation_ckpts/Baseline_TFN/best-epoch=46-val_bal_acc=0.248.ckpt"
+  },
+  "Baseline_MulT": {
+    "experiment_name": "Baseline_MulT",
+    "config": {
+      "ckpt_dir": "/kaggle/working/ablation_ckpts",
+      "batch_size": 64,
+      "num_workers": 2,
+      "text_dim": 300,
+      "audio_dim": 74,
+      "video_dim": 35,
+      "hidden_dim": 128,
+      "latent_dim": 128,
+      "num_classes": 6,
+      "encoder_type": "legacy",
+      "encoder_layers": 2,
+      "encoder_dropout": 0.3,
+      "fusion_type": "concat",
+      "num_bottleneck_tokens": 20,
+      "num_cross_attn_layers": 1,
+      "num_self_attn_layers": 1,
+      "dag_method": "notears",
+      "diffusion_steps": 1000,
+      "ddim_steps": 50,
+      "beta_kl": 0.1,
+      "lambda_diff": 0.05,
+      "lambda_causal": 0.05,
+      "lambda_recon": 0.5,
+      "cfg_scale": 3.0,
+      "ema_decay": 0.999,
+      "label_smoothing": 0.1,
+      "free_bits": 0.0,
+      "use_reconstruction": false,
+      "use_diffusion": true,
+      "use_causal_graph": true,
+      "use_augmentation": true,
+      "use_beta_tc_vae": false,
+      "use_focal_loss": true,
+      "focal_gamma": 2.0,
+      "use_vae": true,
+      "use_stop_gradient": true,
+      "use_cfg": true,
+      "use_causal_diffusion_cond": true,
+      "use_kl_warmup": true,
+      "lr": 0.0005,
+      "weight_decay": 0.0001,
+      "epochs": 100,
+      "patience": 35,
+      "precision": "16-mixed",
+      "gradient_clip_val": 1.0,
+      "devices": 1,
+      "seed": 42,
+      "experiment_name": "Baseline_MulT",
+      "use_wandb": false,
+      "wandb_project": "Affect-Diff-CVPR"
+    },
+    "test_metrics": {
+      "test_loss": 1.2234230041503906,
+      "test_acc": 0.6261904835700989,
+      "test_bal_acc": 0.2745482921600342,
+      "test_macro_f1": 0.2258586287498474,
+      "test_balanced_acc": 0.23427702486515045,
+      "test_auroc": 0.6774423122406006
+    },
+    "rich_metrics": {
+      "macro_f1": 0.2258586287498474,
+      "balanced_acc": 0.2342770298322042,
+      "auroc": 0.6774423122406006,
+      "per_class_f1": {
+        "Happy": 0.784246563911438,
+        "Sad": 0.3401360511779785,
+        "Angry": 0.23076923191547394,
+        "Fear": 0.0,
+        "Disgust": 0.0,
+        "Surprise": 0.0
+      },
+      "per_class_prec": {
+        "Happy": 0.7459283471107483,
+        "Sad": 0.35211268067359924,
+        "Angry": 0.2142857164144516,
+        "Fear": 0.0,
+        "Disgust": 0.0,
+        "Surprise": 0.0
+      },
+      "per_class_rec": {
+        "Happy": 0.826714813709259,
+        "Sad": 0.32894736528396606,
+        "Angry": 0.25,
+        "Fear": 0.0,
+        "Disgust": 0.0,
+        "Surprise": 0.0
+      },
+      "confusion_matrix": [
+        [
+          229,
+          29,
+          19,
+          0,
+          0,
+          0
+        ],
+        [
+          42,
+          25,
+          9,
+          0,
+          0,
+          0
+        ],
+        [
+          20,
+          7,
+          9,
+          0,
+          0,
+          0
+        ],
+        [
+          6,
+          0,
+          2,
+          0,
+          0,
+          0
+        ],
+        [
+          6,
+          4,
+          2,
+          0,
+          0,
+          0
+        ],
+        [
+          4,
+          6,
+          1,
+          0,
+          0,
+          0
+        ]
+      ]
+    },
+    "robustness": {
+      "missing_text": {
+        "acc": 0.6357142925262451,
+        "macro_f1": 0.21652056276798248
+      },
+      "missing_audio": {
+        "acc": 0.6357142925262451,
+        "macro_f1": 0.23317834734916687
+      },
+      "missing_vision": {
+        "acc": 0.6214285492897034,
+        "macro_f1": 0.19812220335006714
+      },
+      "noise_0.1": {
+        "acc": 0.6238095164299011,
+        "macro_f1": 0.22486518323421478
+      },
+      "noise_0.25": {
+        "acc": 0.6238095164299011,
+        "macro_f1": 0.22287854552268982
+      },
+      "noise_0.5": {
+        "acc": 0.6357142925262451,
+        "macro_f1": 0.2317393571138382
+      },
+      "noise_1.0": {
+        "acc": 0.6166666746139526,
+        "macro_f1": 0.23303568363189697
+      },
+      "noise_2.0": {
+        "acc": 0.5714285969734192,
+        "macro_f1": 0.21949510276317596
+      },
+      "frame_mask_0.1": {
+        "acc": 0.6380952596664429,
+        "macro_f1": 0.23171816766262054
+      },
+      "frame_mask_0.25": {
+        "acc": 0.6380952596664429,
+        "macro_f1": 0.21686142683029175
+      },
+      "frame_mask_0.5": {
+        "acc": 0.6666666865348816,
+        "macro_f1": 0.2049286812543869
+      },
+      "frame_mask_0.75": {
+        "acc": 0.6690475940704346,
+        "macro_f1": 0.16208869218826294
+      }
+    },
+    "efficiency": {
+      "total_params": 756038,
+      "trainable_params": 756038,
+      "latency_ms": 49.35
+    },
+    "train_time_min": 1.0,
+    "best_ckpt": "/kaggle/working/ablation_ckpts/Baseline_MulT/best-epoch=11-val_bal_acc=0.278.ckpt"
+  },
+  "Baseline_MISA": {
+    "experiment_name": "Baseline_MISA",
+    "config": {
+      "ckpt_dir": "/kaggle/working/ablation_ckpts",
+      "batch_size": 64,
+      "num_workers": 2,
+      "text_dim": 300,
+      "audio_dim": 74,
+      "video_dim": 35,
+      "hidden_dim": 128,
+      "latent_dim": 128,
+      "num_classes": 6,
+      "encoder_type": "legacy",
+      "encoder_layers": 2,
+      "encoder_dropout": 0.3,
+      "fusion_type": "concat",
+      "num_bottleneck_tokens": 20,
+      "num_cross_attn_layers": 1,
+      "num_self_attn_layers": 1,
+      "dag_method": "notears",
+      "diffusion_steps": 1000,
+      "ddim_steps": 50,
+      "beta_kl": 0.1,
+      "lambda_diff": 0.05,
+      "lambda_causal": 0.05,
+      "lambda_recon": 0.5,
+      "cfg_scale": 3.0,
+      "ema_decay": 0.999,
+      "label_smoothing": 0.1,
+      "free_bits": 0.0,
+      "use_reconstruction": false,
+      "use_diffusion": true,
+      "use_causal_graph": true,
+      "use_augmentation": true,
+      "use_beta_tc_vae": false,
+      "use_focal_loss": true,
+      "focal_gamma": 2.0,
+      "use_vae": true,
+      "use_stop_gradient": true,
+      "use_cfg": true,
+      "use_causal_diffusion_cond": true,
+      "use_kl_warmup": true,
+      "lr": 0.0005,
+      "weight_decay": 0.0001,
+      "epochs": 100,
+      "patience": 35,
+      "precision": "16-mixed",
+      "gradient_clip_val": 1.0,
+      "devices": 1,
+      "seed": 42,
+      "experiment_name": "Baseline_MISA",
+      "use_wandb": false,
+      "wandb_project": "Affect-Diff-CVPR"
+    },
+    "test_metrics": {
+      "test_loss": 1.2631323337554932,
+      "test_acc": 0.6333333253860474,
+      "test_cmd": 0.003992249257862568,
+      "test_bal_acc": 0.2722404897212982,
+      "test_macro_f1": 0.22128523886203766,
+      "test_balanced_acc": 0.23026403784751892,
+      "test_auroc": 0.6648606657981873
+    },
+    "rich_metrics": {
+      "macro_f1": 0.22128523886203766,
+      "balanced_acc": 0.23026403412222862,
+      "auroc": 0.6648606657981873,
+      "per_class_f1": {
+        "Happy": 0.7889273166656494,
+        "Sad": 0.42767295241355896,
+        "Angry": 0.1111111119389534,
+        "Fear": 0.0,
+        "Disgust": 0.0,
+        "Surprise": 0.0
+      },
+      "per_class_prec": {
+        "Happy": 0.7574750781059265,
+        "Sad": 0.40963855385780334,
+        "Angry": 0.1111111119389534,
+        "Fear": 0.0,
+        "Disgust": 0.0,
+        "Surprise": 0.0
+      },
+      "per_class_rec": {
+        "Happy": 0.8231046795845032,
+        "Sad": 0.44736841320991516,
+        "Angry": 0.1111111119389534,
+        "Fear": 0.0,
+        "Disgust": 0.0,
+        "Surprise": 0.0
+      },
+      "confusion_matrix": [
+        [
+          228,
+          30,
+          19,
+          0,
+          0,
+          0
+        ],
+        [
+          33,
+          34,
+          9,
+          0,
+          0,
+          0
+        ],
+        [
+          23,
+          9,
+          4,
+          0,
+          0,
+          0
+        ],
+        [
+          5,
+          1,
+          2,
+          0,
+          0,
+          0
+        ],
+        [
+          6,
+          4,
+          2,
+          0,
+          0,
+          0
+        ],
+        [
+          6,
+          5,
+          0,
+          0,
+          0,
+          0
+        ]
+      ]
+    },
+    "robustness": {
+      "missing_text": {
+        "acc": 0.6595237851142883,
+        "macro_f1": 0.14114601910114288
+      },
+      "missing_audio": {
+        "acc": 0.6523809432983398,
+        "macro_f1": 0.21062803268432617
+      },
+      "missing_vision": {
+        "acc": 0.6595237851142883,
+        "macro_f1": 0.1839912384748459
+      },
+      "noise_0.1": {
+        "acc": 0.6261904835700989,
+        "macro_f1": 0.21659334003925323
+      },
+      "noise_0.25": {
+        "acc": 0.6499999761581421,
+        "macro_f1": 0.2256116420030594
+      },
+      "noise_0.5": {
+        "acc": 0.6523809432983398,
+        "macro_f1": 0.22469361126422882
+      },
+      "noise_1.0": {
+        "acc": 0.6666666865348816,
+        "macro_f1": 0.22142484784126282
+      },
+      "noise_2.0": {
+        "acc": 0.6666666865348816,
+        "macro_f1": 0.18317489326000214
+      },
+      "frame_mask_0.1": {
+        "acc": 0.6761904954910278,
+        "macro_f1": 0.22861424088478088
+      },
+      "frame_mask_0.25": {
+        "acc": 0.6738095283508301,
+        "macro_f1": 0.19452321529388428
+      },
+      "frame_mask_0.5": {
+        "acc": 0.6595237851142883,
+        "macro_f1": 0.13247250020503998
+      },
+      "frame_mask_0.75": {
+        "acc": 0.6595237851142883,
+        "macro_f1": 0.13247250020503998
+      }
+    },
+    "efficiency": {
+      "total_params": 153094,
+      "trainable_params": 153094,
+      "latency_ms": 4.33
+    },
+    "train_time_min": 1.0,
+    "best_ckpt": "/kaggle/working/ablation_ckpts/Baseline_MISA/best-epoch=18-val_bal_acc=0.278.ckpt"
+  },
+  "Baseline_MMIM": {
+    "experiment_name": "Baseline_MMIM",
+    "config": {
+      "ckpt_dir": "/kaggle/working/ablation_ckpts",
+      "batch_size": 64,
+      "num_workers": 2,
+      "text_dim": 300,
+      "audio_dim": 74,
+      "video_dim": 35,
+      "hidden_dim": 128,
+      "latent_dim": 128,
+      "num_classes": 6,
+      "encoder_type": "legacy",
+      "encoder_layers": 2,
+      "encoder_dropout": 0.3,
+      "fusion_type": "concat",
+      "num_bottleneck_tokens": 20,
+      "num_cross_attn_layers": 1,
+      "num_self_attn_layers": 1,
+      "dag_method": "notears",
+      "diffusion_steps": 1000,
+      "ddim_steps": 50,
+      "beta_kl": 0.1,
+      "lambda_diff": 0.05,
+      "lambda_causal": 0.05,
+      "lambda_recon": 0.5,
+      "cfg_scale": 3.0,
+      "ema_decay": 0.999,
+      "label_smoothing": 0.1,
+      "free_bits": 0.0,
+      "use_reconstruction": false,
+      "use_diffusion": true,
+      "use_causal_graph": true,
+      "use_augmentation": true,
+      "use_beta_tc_vae": false,
+      "use_focal_loss": true,
+      "focal_gamma": 2.0,
+      "use_vae": true,
+      "use_stop_gradient": true,
+      "use_cfg": true,
+      "use_causal_diffusion_cond": true,
+      "use_kl_warmup": true,
+      "lr": 0.0005,
+      "weight_decay": 0.0001,
+      "epochs": 100,
+      "patience": 35,
+      "precision": "16-mixed",
+      "gradient_clip_val": 1.0,
+      "devices": 1,
+      "seed": 42,
+      "experiment_name": "Baseline_MMIM",
+      "use_wandb": false,
+      "wandb_project": "Affect-Diff-CVPR"
+    },
+    "test_metrics": {
+      "test_loss": 1.347824215888977,
+      "test_acc": 0.6785714030265808,
+      "test_mi_loss": 0.2387426346540451,
+      "test_bal_acc": 0.285522997379303,
+      "test_macro_f1": 0.2486540973186493,
+      "test_balanced_acc": 0.246668741106987,
+      "test_auroc": 0.6332244873046875
+    },
+    "rich_metrics": {
+      "macro_f1": 0.2486540973186493,
+      "balanced_acc": 0.24666874359051386,
+      "auroc": 0.6332244873046875,
+      "per_class_f1": {
+        "Happy": 0.8077544569969177,
+        "Sad": 0.421875,
+        "Angry": 0.26229506731033325,
+        "Fear": 0.0,
+        "Disgust": 0.0,
+        "Surprise": 0.0
+      },
+      "per_class_prec": {
+        "Happy": 0.7309941649436951,
+        "Sad": 0.5192307829856873,
+        "Angry": 0.3199999928474426,
+        "Fear": 0.0,
+        "Disgust": 0.0,
+        "Surprise": 0.0
+      },
+      "per_class_rec": {
+        "Happy": 0.9025270938873291,
+        "Sad": 0.3552631437778473,
+        "Angry": 0.2222222238779068,
+        "Fear": 0.0,
+        "Disgust": 0.0,
+        "Surprise": 0.0
+      },
+      "confusion_matrix": [
+        [
+          250,
+          16,
+          11,
+          0,
+          0,
+          0
+        ],
+        [
+          44,
+          27,
+          5,
+          0,
+          0,
+          0
+        ],
+        [
+          23,
+          4,
+          8,
+          0,
+          0,
+          1
+        ],
+        [
+          7,
+          0,
+          1,
+          0,
+          0,
+          0
+        ],
+        [
+          10,
+          2,
+          0,
+          0,
+          0,
+          0
+        ],
+        [
+          8,
+          3,
+          0,
+          0,
+          0,
+          0
+        ]
+      ]
+    },
+    "robustness": {
+      "missing_text": {
+        "acc": 0.6547619104385376,
+        "macro_f1": 0.14841307699680328
+      },
+      "missing_audio": {
+        "acc": 0.6857143044471741,
+        "macro_f1": 0.24109426140785217
+      },
+      "missing_vision": {
+        "acc": 0.6476190686225891,
+        "macro_f1": 0.22990547120571136
+      },
+      "noise_0.1": {
+        "acc": 0.6761904954910278,
+        "macro_f1": 0.24762746691703796
+      },
+      "noise_0.25": {
+        "acc": 0.6738095283508301,
+        "macro_f1": 0.24161234498023987
+      },
+      "noise_0.5": {
+        "acc": 0.6642857193946838,
+        "macro_f1": 0.2422337681055069
+      },
+      "noise_1.0": {
+        "acc": 0.6499999761581421,
+        "macro_f1": 0.2185773253440857
+      },
+      "noise_2.0": {
+        "acc": 0.6404761672019958,
+        "macro_f1": 0.23980194330215454
+      },
+      "frame_mask_0.1": {
+        "acc": 0.6785714030265808,
+        "macro_f1": 0.23832982778549194
+      },
+      "frame_mask_0.25": {
+        "acc": 0.6785714030265808,
+        "macro_f1": 0.2485591024160385
+      },
+      "frame_mask_0.5": {
+        "acc": 0.6690475940704346,
+        "macro_f1": 0.20800694823265076
+      },
+      "frame_mask_0.75": {
+        "acc": 0.6809523701667786,
+        "macro_f1": 0.1983676254749298
+      }
+    },
+    "efficiency": {
+      "total_params": 367494,
+      "trainable_params": 367494,
+      "latency_ms": 1.63
+    },
+    "train_time_min": 1.7,
+    "best_ckpt": "/kaggle/working/ablation_ckpts/Baseline_MMIM/best-epoch=72-val_bal_acc=0.266.ckpt"
+  },
+  "Baseline_TETFN": {
+    "experiment_name": "Baseline_TETFN",
+    "config": {
+      "ckpt_dir": "/kaggle/working/ablation_ckpts",
+      "batch_size": 64,
+      "num_workers": 2,
+      "text_dim": 300,
+      "audio_dim": 74,
+      "video_dim": 35,
+      "hidden_dim": 128,
+      "latent_dim": 128,
+      "num_classes": 6,
+      "encoder_type": "legacy",
+      "encoder_layers": 2,
+      "encoder_dropout": 0.3,
+      "fusion_type": "concat",
+      "num_bottleneck_tokens": 20,
+      "num_cross_attn_layers": 1,
+      "num_self_attn_layers": 1,
+      "dag_method": "notears",
+      "diffusion_steps": 1000,
+      "ddim_steps": 50,
+      "beta_kl": 0.1,
+      "lambda_diff": 0.05,
+      "lambda_causal": 0.05,
+      "lambda_recon": 0.5,
+      "cfg_scale": 3.0,
+      "ema_decay": 0.999,
+      "label_smoothing": 0.1,
+      "free_bits": 0.0,
+      "use_reconstruction": false,
+      "use_diffusion": true,
+      "use_causal_graph": true,
+      "use_augmentation": true,
+      "use_beta_tc_vae": false,
+      "use_focal_loss": true,
+      "focal_gamma": 2.0,
+      "use_vae": true,
+      "use_stop_gradient": true,
+      "use_cfg": true,
+      "use_causal_diffusion_cond": true,
+      "use_kl_warmup": true,
+      "lr": 0.0005,
+      "weight_decay": 0.0001,
+      "epochs": 100,
+      "patience": 35,
+      "precision": "16-mixed",
+      "gradient_clip_val": 1.0,
+      "devices": 1,
+      "seed": 42,
+      "experiment_name": "Baseline_TETFN",
+      "use_wandb": false,
+      "wandb_project": "Affect-Diff-CVPR"
+    },
+    "test_metrics": {
+      "test_loss": 1.4891310930252075,
+      "test_acc": 0.6000000238418579,
+      "test_bal_acc": 0.25524207949638367,
+      "test_macro_f1": 0.21720488369464874,
+      "test_balanced_acc": 0.22437649965286255,
+      "test_auroc": 0.6510069966316223
+    },
+    "rich_metrics": {
+      "macro_f1": 0.21720488369464874,
+      "balanced_acc": 0.22437649965286255,
+      "auroc": 0.6510069966316223,
+      "per_class_f1": {
+        "Happy": 0.7681415677070618,
+        "Sad": 0.3684210479259491,
+        "Angry": 0.1666666716337204,
+        "Fear": 0.0,
+        "Disgust": 0.0,
+        "Surprise": 0.0
+      },
+      "per_class_prec": {
+        "Happy": 0.7534722089767456,
+        "Sad": 0.3684210479259491,
+        "Angry": 0.1458333283662796,
+        "Fear": 0.0,
+        "Disgust": 0.0,
+        "Surprise": 0.0
+      },
+      "per_class_rec": {
+        "Happy": 0.7833935022354126,
+        "Sad": 0.3684210479259491,
+        "Angry": 0.1944444477558136,
+        "Fear": 0.0,
+        "Disgust": 0.0,
+        "Surprise": 0.0
+      },
+      "confusion_matrix": [
+        [
+          217,
+          33,
+          24,
+          1,
+          0,
+          2
+        ],
+        [
+          35,
+          28,
+          10,
+          0,
+          0,
+          3
+        ],
+        [
+          21,
+          7,
+          7,
+          0,
+          0,
+          1
+        ],
+        [
+          5,
+          2,
+          1,
+          0,
+          0,
+          0
+        ],
+        [
+          4,
+          1,
+          6,
+          0,
+          0,
+          1
+        ],
+        [
+          6,
+          5,
+          0,
+          0,
+          0,
+          0
+        ]
+      ]
+    },
+    "robustness": {
+      "missing_text": {
+        "acc": 0.10238095372915268,
+        "macro_f1": 0.06193514168262482
+      },
+      "missing_audio": {
+        "acc": 0.6119047403335571,
+        "macro_f1": 0.22636397182941437
+      },
+      "missing_vision": {
+        "acc": 0.45476189255714417,
+        "macro_f1": 0.20755253732204437
+      },
+      "noise_0.1": {
+        "acc": 0.6023809313774109,
+        "macro_f1": 0.21640771627426147
+      },
+      "noise_0.25": {
+        "acc": 0.6190476417541504,
+        "macro_f1": 0.2217704802751541
+      },
+      "noise_0.5": {
+        "acc": 0.6071428656578064,
+        "macro_f1": 0.22063109278678894
+      },
+      "noise_1.0": {
+        "acc": 0.6285714507102966,
+        "macro_f1": 0.21359114348888397
+      },
+      "noise_2.0": {
+        "acc": 0.6095238327980042,
+        "macro_f1": 0.18997231125831604
+      },
+      "frame_mask_0.1": {
+        "acc": 0.6071428656578064,
+        "macro_f1": 0.24745246767997742
+      },
+      "frame_mask_0.25": {
+        "acc": 0.6071428656578064,
+        "macro_f1": 0.24844229221343994
+      },
+      "frame_mask_0.5": {
+        "acc": 0.5404762029647827,
+        "macro_f1": 0.19512253999710083
+      },
+      "frame_mask_0.75": {
+        "acc": 0.4833333194255829,
+        "macro_f1": 0.1862250715494156
+      }
+    },
+    "efficiency": {
+      "total_params": 555782,
+      "trainable_params": 555782,
+      "latency_ms": 54.87
+    },
+    "train_time_min": 1.0,
+    "best_ckpt": "/kaggle/working/ablation_ckpts/Baseline_TETFN/best-epoch=16-val_bal_acc=0.324.ckpt"
+  },
+  "Full_Model_s43": {
+    "experiment_name": "Full_Model_s43",
+    "config": {
+      "ckpt_dir": "/kaggle/working/ablation_ckpts",
+      "batch_size": 64,
+      "num_workers": 2,
+      "text_dim": 300,
+      "audio_dim": 74,
+      "video_dim": 35,
+      "hidden_dim": 128,
+      "latent_dim": 128,
+      "num_classes": 6,
+      "encoder_type": "legacy",
+      "encoder_layers": 2,
+      "encoder_dropout": 0.3,
+      "fusion_type": "concat",
+      "num_bottleneck_tokens": 20,
+      "num_cross_attn_layers": 1,
+      "num_self_attn_layers": 1,
+      "dag_method": "notears",
+      "diffusion_steps": 1000,
+      "ddim_steps": 50,
+      "beta_kl": 0.1,
+      "lambda_diff": 0.05,
+      "lambda_causal": 0.05,
+      "lambda_recon": 0.5,
+      "cfg_scale": 3.0,
+      "ema_decay": 0.999,
+      "label_smoothing": 0.1,
+      "free_bits": 0.0,
+      "use_reconstruction": false,
+      "use_diffusion": true,
+      "use_causal_graph": true,
+      "use_augmentation": true,
+      "use_beta_tc_vae": false,
+      "use_focal_loss": true,
+      "focal_gamma": 2.0,
+      "use_vae": true,
+      "use_stop_gradient": true,
+      "use_cfg": true,
+      "use_causal_diffusion_cond": true,
+      "use_kl_warmup": true,
+      "lr": 0.0005,
+      "weight_decay": 0.0001,
+      "epochs": 100,
+      "patience": 35,
+      "precision": "16-mixed",
+      "gradient_clip_val": 1.0,
+      "devices": 1,
+      "seed": 42,
+      "experiment_name": "Full_Model_s43",
+      "use_wandb": false,
+      "wandb_project": "Affect-Diff-CVPR"
+    },
+    "test_metrics": {
+      "test_loss": 3.1137325763702393,
+      "test_acc": 0.5428571701049805,
+      "test_bal_acc": 0.24855823814868927,
+      "test_loss_task": 3.0444631576538086,
+      "test_loss_kl": 0.08891839534044266,
+      "test_loss_diff": 0.66647869348526,
+      "test_loss_causal": 0.007563678082078695,
+      "test_loss_recon": 0.0,
+      "test_macro_f1": 0.21406801044940948,
+      "test_balanced_acc": 0.22371059656143188,
+      "test_auroc": 0.6043991446495056
+    },
+    "rich_metrics": {
+      "macro_f1": 0.21406801044940948,
+      "balanced_acc": 0.22371060152848563,
+      "auroc": 0.6043991446495056,
+      "per_class_f1": {
+        "Happy": 0.7342256307601929,
+        "Sad": 0.375,
+        "Angry": 0.17518247663974762,
+        "Fear": 0.0,
+        "Disgust": 0.0,
+        "Surprise": 0.0
+      },
+      "per_class_prec": {
+        "Happy": 0.7804877758026123,
+        "Sad": 0.4615384638309479,
+        "Angry": 0.11881188303232193,
+        "Fear": 0.0,
+        "Disgust": 0.0,
+        "Surprise": 0.0
+      },
+      "per_class_rec": {
+        "Happy": 0.6931408047676086,
+        "Sad": 0.31578946113586426,
+        "Angry": 0.3333333432674408,
+        "Fear": 0.0,
+        "Disgust": 0.0,
+        "Surprise": 0.0
+      },
+      "confusion_matrix": [
+        [
+          192,
+          19,
+          52,
+          7,
+          0,
+          7
+        ],
+        [
+          23,
+          24,
+          24,
+          1,
+          1,
+          3
+        ],
+        [
+          16,
+          7,
+          12,
+          1,
+          0,
+          0
+        ],
+        [
+          3,
+          1,
+          4,
+          0,
+          0,
+          0
+        ],
+        [
+          6,
+          0,
+          5,
+          0,
+          0,
+          1
+        ],
+        [
+          6,
+          1,
+          4,
+          0,
+          0,
+          0
+        ]
+      ]
+    },
+    "robustness": {
+      "missing_text": {
+        "acc": 0.5452380776405334,
+        "macro_f1": 0.2048669457435608
+      },
+      "missing_audio": {
+        "acc": 0.6071428656578064,
+        "macro_f1": 0.23236693441867828
+      },
+      "missing_vision": {
+        "acc": 0.4952380955219269,
+        "macro_f1": 0.1786191165447235
+      },
+      "noise_0.1": {
+        "acc": 0.538095235824585,
+        "macro_f1": 0.21330586075782776
+      },
+      "noise_0.25": {
+        "acc": 0.5404762029647827,
+        "macro_f1": 0.20907507836818695
+      },
+      "noise_0.5": {
+        "acc": 0.550000011920929,
+        "macro_f1": 0.2187945544719696
+      },
+      "noise_1.0": {
+        "acc": 0.5785714387893677,
+        "macro_f1": 0.21161986887454987
+      },
+      "noise_2.0": {
+        "acc": 0.6190476417541504,
+        "macro_f1": 0.19995689392089844
+      },
+      "frame_mask_0.1": {
+        "acc": 0.5452380776405334,
+        "macro_f1": 0.24842453002929688
+      },
+      "frame_mask_0.25": {
+        "acc": 0.5571428537368774,
+        "macro_f1": 0.22998099029064178
+      },
+      "frame_mask_0.5": {
+        "acc": 0.5547618865966797,
+        "macro_f1": 0.20848849415779114
+      },
+      "frame_mask_0.75": {
+        "acc": 0.5738095045089722,
+        "macro_f1": 0.22038547694683075
+      }
+    },
+    "efficiency": {
+      "total_params": 8916553,
+      "trainable_params": 5194953,
+      "latency_ms": 87.21
+    },
+    "train_time_min": 4.1,
+    "best_ckpt": "/kaggle/working/ablation_ckpts/Full_Model_s43/best-epoch=28-val_bal_acc=0.384.ckpt"
+  },
+  "Full_Model_s44": {
+    "experiment_name": "Full_Model_s44",
+    "config": {
+      "ckpt_dir": "/kaggle/working/ablation_ckpts",
+      "batch_size": 64,
+      "num_workers": 2,
+      "text_dim": 300,
+      "audio_dim": 74,
+      "video_dim": 35,
+      "hidden_dim": 128,
+      "latent_dim": 128,
+      "num_classes": 6,
+      "encoder_type": "legacy",
+      "encoder_layers": 2,
+      "encoder_dropout": 0.3,
+      "fusion_type": "concat",
+      "num_bottleneck_tokens": 20,
+      "num_cross_attn_layers": 1,
+      "num_self_attn_layers": 1,
+      "dag_method": "notears",
+      "diffusion_steps": 1000,
+      "ddim_steps": 50,
+      "beta_kl": 0.1,
+      "lambda_diff": 0.05,
+      "lambda_causal": 0.05,
+      "lambda_recon": 0.5,
+      "cfg_scale": 3.0,
+      "ema_decay": 0.999,
+      "label_smoothing": 0.1,
+      "free_bits": 0.0,
+      "use_reconstruction": false,
+      "use_diffusion": true,
+      "use_causal_graph": true,
+      "use_augmentation": true,
+      "use_beta_tc_vae": false,
+      "use_focal_loss": true,
+      "focal_gamma": 2.0,
+      "use_vae": true,
+      "use_stop_gradient": true,
+      "use_cfg": true,
+      "use_causal_diffusion_cond": true,
+      "use_kl_warmup": true,
+      "lr": 0.0005,
+      "weight_decay": 0.0001,
+      "epochs": 100,
+      "patience": 35,
+      "precision": "16-mixed",
+      "gradient_clip_val": 1.0,
+      "devices": 1,
+      "seed": 42,
+      "experiment_name": "Full_Model_s44",
+      "use_wandb": false,
+      "wandb_project": "Affect-Diff-CVPR"
+    },
+    "test_metrics": {
+      "test_loss": 3.1137325763702393,
+      "test_acc": 0.5428571701049805,
+      "test_bal_acc": 0.24855823814868927,
+      "test_loss_task": 3.0444631576538086,
+      "test_loss_kl": 0.08891839534044266,
+      "test_loss_diff": 0.66647869348526,
+      "test_loss_causal": 0.007563678082078695,
+      "test_loss_recon": 0.0,
+      "test_macro_f1": 0.21406801044940948,
+      "test_balanced_acc": 0.22371059656143188,
+      "test_auroc": 0.6043991446495056
+    },
+    "rich_metrics": {
+      "macro_f1": 0.21406801044940948,
+      "balanced_acc": 0.22371060152848563,
+      "auroc": 0.6043991446495056,
+      "per_class_f1": {
+        "Happy": 0.7342256307601929,
+        "Sad": 0.375,
+        "Angry": 0.17518247663974762,
+        "Fear": 0.0,
+        "Disgust": 0.0,
+        "Surprise": 0.0
+      },
+      "per_class_prec": {
+        "Happy": 0.7804877758026123,
+        "Sad": 0.4615384638309479,
+        "Angry": 0.11881188303232193,
+        "Fear": 0.0,
+        "Disgust": 0.0,
+        "Surprise": 0.0
+      },
+      "per_class_rec": {
+        "Happy": 0.6931408047676086,
+        "Sad": 0.31578946113586426,
+        "Angry": 0.3333333432674408,
+        "Fear": 0.0,
+        "Disgust": 0.0,
+        "Surprise": 0.0
+      },
+      "confusion_matrix": [
+        [
+          192,
+          19,
+          52,
+          7,
+          0,
+          7
+        ],
+        [
+          23,
+          24,
+          24,
+          1,
+          1,
+          3
+        ],
+        [
+          16,
+          7,
+          12,
+          1,
+          0,
+          0
+        ],
+        [
+          3,
+          1,
+          4,
+          0,
+          0,
+          0
+        ],
+        [
+          6,
+          0,
+          5,
+          0,
+          0,
+          1
+        ],
+        [
+          6,
+          1,
+          4,
+          0,
+          0,
+          0
+        ]
+      ]
+    },
+    "robustness": {
+      "missing_text": {
+        "acc": 0.5452380776405334,
+        "macro_f1": 0.2048669457435608
+      },
+      "missing_audio": {
+        "acc": 0.6071428656578064,
+        "macro_f1": 0.23236693441867828
+      },
+      "missing_vision": {
+        "acc": 0.4952380955219269,
+        "macro_f1": 0.1786191165447235
+      },
+      "noise_0.1": {
+        "acc": 0.538095235824585,
+        "macro_f1": 0.21330586075782776
+      },
+      "noise_0.25": {
+        "acc": 0.5404762029647827,
+        "macro_f1": 0.20907507836818695
+      },
+      "noise_0.5": {
+        "acc": 0.550000011920929,
+        "macro_f1": 0.2187945544719696
+      },
+      "noise_1.0": {
+        "acc": 0.5785714387893677,
+        "macro_f1": 0.21161986887454987
+      },
+      "noise_2.0": {
+        "acc": 0.6190476417541504,
+        "macro_f1": 0.19995689392089844
+      },
+      "frame_mask_0.1": {
+        "acc": 0.5452380776405334,
+        "macro_f1": 0.24842453002929688
+      },
+      "frame_mask_0.25": {
+        "acc": 0.5571428537368774,
+        "macro_f1": 0.22998099029064178
+      },
+      "frame_mask_0.5": {
+        "acc": 0.5547618865966797,
+        "macro_f1": 0.20848849415779114
+      },
+      "frame_mask_0.75": {
+        "acc": 0.5738095045089722,
+        "macro_f1": 0.22038547694683075
+      }
+    },
+    "efficiency": {
+      "total_params": 8916553,
+      "trainable_params": 5194953,
+      "latency_ms": 84.14
+    },
+    "train_time_min": 4.1,
+    "best_ckpt": "/kaggle/working/ablation_ckpts/Full_Model_s44/best-epoch=28-val_bal_acc=0.384.ckpt"
+  }
+}

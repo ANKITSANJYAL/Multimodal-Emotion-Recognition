@@ -47,7 +47,10 @@ Thumbs.db
 .ipynb_checkpoints
 
 # Project Specific
-report.pdf
 *.log
 output.txt
 .gemini/
+.claude/
+
+# Model checkpoints (large, regenerate from training)
+logs/*/checkpoints/

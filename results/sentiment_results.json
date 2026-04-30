@@ -1,0 +1,50 @@
+[
+  {
+    "experiment": "Sentiment_7class",
+    "task": "7class",
+    "num_classes": 7,
+    "text_dim": 768,
+    "best_val_bal_acc": 0.7389247417449951,
+    "train_time_s": 1159.7,
+    "test": {
+      "test_loss": 0.7316066026687622,
+      "test_acc": 0.7882764935493469,
+      "test_bal_acc": 0.7286362051963806,
+      "test_loss_task": 0.653690755367279,
+      "test_loss_kl": 0.042685527354478836,
+      "test_loss_diff": 0.6875261068344116,
+      "test_loss_causal": 0.017081046476960182,
+      "test_loss_recon": 0.0,
+      "test_macro_f1": 0.7239067554473877,
+      "test_balanced_acc": 0.7286362051963806,
+      "test_auroc": 0.952178418636322,
+      "test_mae": 0.3348527252674103,
+      "test_pearson": 0.9047737717628479,
+      "test_bin_acc": 0.9218431115150452
+    }
+  },
+  {
+    "experiment": "Sentiment_binary",
+    "task": "binary",
+    "num_classes": 2,
+    "text_dim": 768,
+    "best_val_bal_acc": 0.920383095741272,
+    "train_time_s": 657.0,
+    "test": {
+      "test_loss": 0.2783186137676239,
+      "test_acc": 0.9399241805076599,
+      "test_bal_acc": 0.9250050783157349,
+      "test_loss_task": 0.12875501811504364,
+      "test_loss_kl": 1.1435394287109375,
+      "test_loss_diff": 1.1508549451828003,
+      "test_loss_causal": 0.013679344207048416,
+      "test_loss_recon": 0.0,
+      "test_macro_f1": 0.926055908203125,
+      "test_balanced_acc": 0.9250050783157349,
+      "test_auroc": 0.9658772349357605,
+      "test_mae": 0.7060221433639526,
+      "test_pearson": 0.7160600423812866,
+      "test_bin_acc": 0.9399241805076599
+    }
+  }
+]

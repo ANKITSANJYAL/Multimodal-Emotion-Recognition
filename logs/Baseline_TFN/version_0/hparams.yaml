@@ -1,0 +1,11 @@
+lr: 0.0005
+weight_decay: 0.0001
+epochs: 100
+num_classes: 6
+label_smoothing: 0.1
+text_dim: 300
+audio_dim: 74
+video_dim: 35
+proj_dim: 16
+hidden_dim: 128
+dropout: 0.3
